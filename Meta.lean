@@ -205,7 +205,7 @@ syntax (name := resolution) "resolution" ident "," ident "," term "," ident : ta
           logInfo m!"......new goal: {← instantiateMVars currGoalType}"
         for s in get_cong_assoc (len₁ - 2) `or_assoc_conv do
           evalTactic (← `(tactic| apply $s))
-          logInfo m!"....apply or_assoc_conv"
+          logInfo m!"....apply {s}"
           printGoal
 
         if len₁ > 1 then

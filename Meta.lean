@@ -58,7 +58,7 @@ def get_index (t o : Expr) : Option Nat :=
   | app (app (const `Or ..) e1) e2 => if e1 == t then some 0
                                       else (. + 1) <$> get_index t e2
   | e => if e == t then some 0
-         else none        
+         else none
 
 def get_length (o : Expr) : Nat :=
   match o with
@@ -107,6 +107,7 @@ syntax (name := reorder) "reorder" term "," ident "," ident : tactic
     | some i => pure i
     | none   => throwError "term not found"
 
+  logInfo m!"Reorder {type} for pivot {pivot} (pos {index})"
   let l := get_length type
   let arr : List Term :=
     if index = 0 then []
@@ -114,14 +115,22 @@ syntax (name := reorder) "reorder" term "," ident "," ident : tactic
          else tactics_regular index
 
   let new_term := reorder_goal pivot type
+  logInfo m!"..expected goal is {new_term}"
   let mvarId ← getMainGoal
   Meta.withMVarContext mvarId do
     let name := stx[5].getId
     let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
     let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
     replaceMainGoal [p.mvarId!, mvarIdNew]
+    let printGoal : TacticM Unit := do
+      let currGoal ← getMainGoal
+      let currGoalType ← getMVarType currGoal
+      logInfo m!"......new goal: {← instantiateMVars currGoalType}"
     for s in arr do
+      logInfo m!"....apply {s}"
       evalTactic (← `(tactic| apply $s))
+      printGoal
+    logInfo m!"..close goal\n"
     Tactic.closeMainGoal hyp
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by

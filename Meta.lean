@@ -189,6 +189,8 @@ syntax (name := resolution) "resolution" ident "," ident "," term "," ident : ta
       let pivot ← elabTerm stx[5] none
       let resolvant := get_resolution_goal reordFirstHyp reordSecondHyp pivot
       let mvarId ← getMainGoal
+      logInfo m!"Resolve [{pivot}]: {reordFirstHyp} <> {reordSecondHyp}"
+      logInfo m!"..expected goal: {← getMVarType mvarId}"
       Meta.withMVarContext mvarId do
         let name := stx[7].getId
         let p ← Meta.mkFreshExprMVar resolvant MetavarKind.syntheticOpaque name
@@ -197,19 +199,29 @@ syntax (name := resolution) "resolution" ident "," ident "," term "," ident : ta
         let len₁ := get_length reordFirstHyp
         let len₂ := get_length reordSecondHyp
         -- parenthesize preffix in goal corresponding to first hyp
+        let printGoal : TacticM Unit := do
+          let currGoal ← getMainGoal
+          let currGoalType ← getMVarType currGoal
+          logInfo m!"......new goal: {← instantiateMVars currGoalType}"
         for s in get_cong_assoc (len₁ - 2) `or_assoc_conv do
           evalTactic (← `(tactic| apply $s))
+          logInfo m!"....apply or_assoc_conv"
+          printGoal
 
         if len₁ > 1 then
           if len₂ > 1 then
             evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
+            logInfo m!"..close goal with resolution_thm"
           else
             evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
+            logInfo m!"..close goal with resolution_thm₃"
         else
           if len₂ > 1 then
             evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
+            logInfo m!"..close goal with resolution_thm₂"
           else
             evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
+            logInfo m!"..close goal with resolution_thm₄"
 
         evalTactic (← `(tactic| clear $fname1 $fname2))
 

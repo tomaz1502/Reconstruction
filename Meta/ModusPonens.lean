@@ -1,4 +1,4 @@
-import Meta
+import Meta.Resolution
 
 theorem notImplies1 : ∀ {P Q : Prop}, ¬ (P → Q) → P := by
   intros P Q h
@@ -25,12 +25,12 @@ theorem contradiction : ∀ {P : Prop}, P → ¬ P → False := λ p np => np p
 
 theorem mpCvc5 (P Q : Prop) : ¬ (P → (P → Q) → Q) → False :=
   λ lean_a0 =>
-    have lean_s0 := notImplies2 lean_a0
-    have lean_s1 := notImplies1 lean_s0
-    have lean_s2 := impliesElim lean_s1
-    have lean_s4 := notImplies1 lean_a0
+    have lean_s0     := notImplies2 lean_a0
+    have lean_s1     := notImplies1 lean_s0
+    have lean_s2     := impliesElim lean_s1
+    have lean_s4     := notImplies1 lean_a0
     have lean_s6 : Q := by resolution lean_s4, lean_s2, P, x; exact x
-    have lean_s9 := notImplies2 lean_s0
+    have lean_s9     := notImplies2 lean_s0
     contradiction lean_s6 lean_s9
 
 theorem doubleNeg : ∀ {P : Prop}, ¬ ¬ P → P := by

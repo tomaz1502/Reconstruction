@@ -66,7 +66,7 @@ theorem euf : let1 → let2 → let3 → let5 → let8 → False :=
           show let6 from lean_s7
         )
       ))
-    have lean_s2 : let12 → let6 := sorry
+    have lean_s2 : let12 → let6 := by liftNOrToImp lean_s1, 2, bla; exact bla
     have lean_s3 : (¬ let12) ∨ let6 := impliesElim lean_s2
     -- let lean_s4 := clOr lean_s3
     sorry

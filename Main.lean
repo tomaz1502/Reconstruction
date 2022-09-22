@@ -1,4 +1,5 @@
 import Lean
+/- import Meta.Boolean -/
 
 namespace Elab
 
@@ -15,9 +16,18 @@ syntax (name := elabTerm) "#elab" term : command
 
 end Elab
 
-variable {A B C D E F G : Prop}
 
-#elab A ∨ B ∨ C
+def f : Bool → Nat := sorry
+def g : Nat → Prop := sorry
+
+#elab Prop
+
+#elab @Function.comp Bool Nat Prop g f
+
+variable (P Q : Prop)
+#check Lean.Expr
+
+
 
 def main : IO Unit :=
   IO.println s!"Hello, world!"

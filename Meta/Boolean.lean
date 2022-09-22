@@ -1,22 +1,26 @@
+/-Theorems for boolean rules-/
 import Lean
+import Meta.Util
 
 open Lean Lean.Elab Lean.Elab.Tactic Lean.Meta Expr Classical
 open Lean.Elab.Term
 
-def andN : List Prop → Prop := λ l =>
-  match l with
-  | [] => True
-  | h :: [] => h
-  | h :: t  => h ∧ andN t
- 
-def orN : List Prop → Prop := λ l =>
-  match l with
-  | [] => False
-  | h :: [] => h
-  | h₁ :: h₂ :: t  => h₁ ∨ orN (h₂ :: t)
- 
-def notList : List Prop → List Prop :=
-  List.map Not
+theorem notImplies1 : ∀ {P Q : Prop}, ¬ (P → Q) → P := by
+  intros P Q h
+  cases Classical.em P with
+  | inl p  => exact p
+  | inr np => apply False.elim
+              apply h
+              intro p
+              exact False.elim (np p)
+
+theorem notImplies2 : ∀ {P Q : Prop}, ¬ (P → Q) → ¬ Q := by
+  intros P Q h
+  cases Classical.em Q with
+  | inl q  => exact False.elim (h (λ _ => q))
+  | inr nq => exact nq
+
+theorem contradiction : ∀ {P : Prop}, P → ¬ P → False := λ p np => np p
 
 theorem orComm : ∀ {P Q : Prop}, P ∨ Q → Q ∨ P := by
   intros P Q h
@@ -59,9 +63,17 @@ theorem orImplies : ∀ {p q : Prop}, (¬ p → q) → p ∨ q :=
                      | Or.inl pq => Or.inr pq
                      | Or.inr npq => False.elim (npq (h npp))
 
-theorem orImplies₂ : ∀ {p q : Prop}, (¬ p) ∨ q → p → q := sorry
+theorem orImplies₂ : ∀ {p q : Prop}, (¬ p) ∨ q → p → q := by
+  intros P Q h p
+  cases h with
+  | inl np => exact False.elim (np p)
+  | inr q  => exact q
  
-theorem orImplies₃ : ∀ {p q : Prop}, p ∨ q → ¬ p → q := sorry
+theorem orImplies₃ : ∀ {p q : Prop}, p ∨ q → ¬ p → q := by
+  intros P Q h np
+  cases h with
+  | inl p => exact False.elim (np p)
+  | inr q => exact q
 
 theorem scope : ∀ {p q : Prop}, (p → q) → ¬ p ∨ q :=
   by intros p q h
@@ -142,66 +154,11 @@ theorem cong : ∀ {A B : Type u} {f₁ f₂ : A → B} {t₁ t₂ : A},
      rewrite [h₁, h₂]
      exact rfl
 
-
-def notExpr : Expr → Expr
-| app (const `Not ..) e => e
-| e => mkApp (mkConst `Not) e
-
--- TODO: use this style of pattern matching everywhere
-def collectNOrNegArgs : Expr → Nat → List Expr
-| app (app (const `Or ..) e) _,  1       => [notExpr e]
-| app (app (const `Or ..) e1) e2, n + 1 => (notExpr e1) :: collectNOrNegArgs e2 n
-| e, _ => [e]
-
-def dropNArgs : Expr → Nat → Expr
-| app (app (const `Or ..) _) e2, 1 => e2
-| app (app (const `Or ..) _) e2, n + 1 => dropNArgs e2 n
-| e, _ => e
-
-def andNE : List Expr → Expr
-| [] => mkConst `True
-| h :: [] => h
-| h :: t => app (app (const `And []) h) (andNE t)
-
-def liftNOrToImpGoal (e : Expr) (n : Nat) : Expr :=
-  forallE Name.anonymous (andNE (collectNOrNegArgs e n)) (dropNArgs e n) BinderInfo.default
-
-def getCongAssoc' : Nat → Name → Term
-| 0,     n => mkIdent n
-| i + 1, n => Syntax.mkApp (mkIdent `congOrLeft) #[getCongAssoc' i n]
-
-def getCongAssoc : Nat → Name → List Term
-| 0,     _ => []
-| 1,     n => [getCongAssoc' 0 n]
-| i + 2, n => (getCongAssoc' (i + 1) n) :: (getCongAssoc (i + 1) n)
-
-def getLength (o : Expr) : Nat :=
-  match o with
-  | app (app (const `Or ..) _) e2 => 1 + getLength e2
-  | _ => 1
-
-def getNatLit? : Lean.Expr → Option Nat
-| app (app _ (lit (Lean.Literal.natVal x))) _ => some x
-| _ => none
-
-def collectPropsInOrChain : Expr → List Expr
-| app (app (const `Or ..) e₁) e₂ => e₁ :: collectPropsInOrChain e₂
-| e => [e]
-
-def createOrChain : List Expr → Expr
-| [] => mkConst `unreachable
-| [h] => h
-| h::t => app (app (mkConst `Or) h) $ createOrChain t
-
 def getGroupOrPrefixGoal : Expr → Nat → Expr
 | e, n => let props := collectPropsInOrChain e
           let left := createOrChain (List.take n props)
           let right := createOrChain (List.drop n props)
           app (app (mkConst `Or) left) right
-
-def listExpr : List Expr → Expr
-| [] => mkConst `List.nil
-| e::es => mkApp (mkApp (mkConst `List.cons) e) (listExpr es)
 
 syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
 
@@ -226,31 +183,12 @@ syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
     Tactic.closeMainGoal hyp
   else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
 
+def liftOrNToImpGoal (e : Expr) (n : Nat) : Expr :=
+  forallE Name.anonymous (andNE (collectNOrNegArgs e n)) (dropNArgs e n) BinderInfo.default
 
-def exprToString : Expr → String
-| bvar id        => s!"(BVAR {id})"
-| fvar id        => s!"(FVAR {id.name})"
-| mvar id        => s!"(MVAR {id.name})"
-| sort l         => s!"(SORT {l})"
-| const id l     => s!"(CONST {id} {l})"
-| app f x        => s!"(APP {exprToString f} {exprToString x})"
-| lam id s e _   => s!"(LAM {id} {exprToString s} {exprToString e})"
-| forallE id s e _ => s!"(FORALL {id} {exprToString s} {exprToString e})"
-| letE id s v e _  =>
-  s!"(LET {id} {exprToString s} {exprToString v} {exprToString e})"
-| lit l          => s!"(LIT {literalToString l})"
-| mdata m e      => s!"(MDATA {m} {exprToString e})"
-| proj s i e     => s!"(PROJ {s} {i} {exprToString e})"
-where
-  literalToString : Literal → String
-    | Literal.natVal v => ⟨Nat.toDigits 10 v⟩
-    | Literal.strVal v => v
+syntax (name := liftOrNToImp) "liftOrNToImp" term "," term "," ident : tactic
 
-syntax (name := liftNOrToImp) "liftNOrToImp" term "," term "," ident : tactic
-
-#check Expr
-
-@[tactic liftNOrToImp] def evalLiftNOrToImp : Tactic :=
+@[tactic liftOrNToImp] def evalLiftOrNToImp : Tactic :=
   fun stx => withMainContext do
     let prefLen ← 
       match ← getNatLit? <$> Tactic.elabTerm stx[3] none with
@@ -262,37 +200,40 @@ syntax (name := liftNOrToImp) "liftNOrToImp" term "," term "," ident : tactic
     let hyp ← inferType (← Tactic.elabTerm stx[1] none)
     let _ ← evalTactic (← `(tactic| groupOrPrefix $tstx₁, $tstx₃, $fname1))
     let mvarId ← getMainGoal
+    let goal := liftOrNToImpGoal hyp prefLen
     Meta.withMVarContext mvarId do
       let name := stx[5].getId
-      let goal := liftNOrToImpGoal hyp prefLen
-      let hyp ← instantiateMVars hyp
-      logInfo m!"goal = {goal}"
-      logInfo m!"hyp = {exprToString hyp}"
       let p ← Meta.mkFreshExprMVar goal MetavarKind.syntheticOpaque name
       let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name goal p
       replaceMainGoal [p.mvarId!, mvarIdNew]
     withMainContext do
-      let ctx ← getLCtx
-      let grouped ← inferType (ctx.findFromUserName? fname1.getId).get!.toExpr
-      let v : Expr := mkApp (mkConst `orImplies₃) grouped
-      let li := listExpr $ collectNOrNegArgs hyp prefLen
-      let u : Expr := mkApp (mkConst `deMorgan₂) li
-      -- seems better to close the goal by crafting the proof term instead
-      -- of using apply
-      Tactic.closeMainGoal (mkApp (mkApp (mkConst `Function.comp) v) u)
-      let _ ← evalTactic (← `(tactic| clear $fname1))
+      let fname2 ← mkIdent <$> mkFreshId
+      let _ ← evalTactic (← `(tactic| intros $fname2))
+      let _ ← evalTactic (← `(tactic| apply orImplies₃ $fname1))
+      let li := listExpr (collectNOrNegArgs hyp prefLen) (Expr.sort Level.zero)
+      withMainContext do
+        let ctx ← getLCtx
+        let a := (ctx.findFromUserName? fname2.getId).get!.toExpr
+        let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
+        Tactic.closeMainGoal u
 
-/- example : ¬ A ∨ ¬ B ∨ ¬ C ∨ ¬ D → A ∧ B ∧ C → ¬ D := by -/
-/-   intros h₁ h₂ -/
+example : ¬ A ∨ ¬ B ∨ ¬ C ∨ ¬ D → A ∧ B ∧ C → ¬ D := by
+  intros h₁ h₂
+  have blaa : (¬ A ∨ ¬ B ∨ ¬ C) ∨ ¬ D := sorry
+  have hhh: A ∧ B ∧ C → ¬ D := by
+    intro a
+    apply orImplies₃ blaa
+    exact @deMorgan₂ [A, B, C] a
 
-/-   liftNOrToImp h₁, 3, bla -/
-/-   exact bla h₂ -/
+    /- exact @Function.comp (andN [A, B, C]) (¬ orN (notList [A, B, C])) (¬ D) v u -/ 
+  admit
+
+    /- exact (λ x => orImplies₃ blaa (deMorgan₂ x)) -/
+
+  /- liftNOrToImp h₁, 3, bla -/
+
+  /- exact bla h₂ -/
   /- have h₃ : (¬ A ∨ ¬ B ∨ ¬ C) ∨ ¬ D := sorry -- por meio de taticas -/
   /- have bla : ¬ (¬ A ∨ ¬ B ∨ ¬ C) → ¬ D := orImplies₃ h₃ -/
   /- admit -/
 
-  /- have ble : A ∧ B ∧ C → ¬ (¬ A ∨ ¬ B ∨ ¬ C) := @deMorgan₂ [A, B, C] -/
-  /- have bli : A ∧ B ∧ C → ¬ D := bla ∘ ble -/
-  /- exact bla (ble h₂) -/
-  
--- hipotese ble: A ∧ B ∧ C → ¬ D

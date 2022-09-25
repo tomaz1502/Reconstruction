@@ -27,16 +27,6 @@ def collectNOrNegArgs : Expr → Nat → List Expr
 | app (app (const `Or ..) e1) e2, n + 1 => (notExpr e1) :: collectNOrNegArgs e2 n
 | e, _ => [e]
 
-def dropNArgs : Expr → Nat → Expr
-| app (app (const `Or ..) _) e2, 1 => e2
-| app (app (const `Or ..) _) e2, n + 1 => dropNArgs e2 n
-| e, _ => e
-
-def andNE : List Expr → Expr
-| [] => mkConst `True
-| h :: [] => h
-| h :: t => app (app (const `And []) h) (andNE t)
-
 def listExpr : List Expr → Expr → Expr
 | [], ty => mkApp (const `List.nil [Level.zero]) ty
 | e::es, ty => mkApp (mkApp (mkApp (const `List.cons [Level.zero]) ty) e) (listExpr es ty)
@@ -68,3 +58,8 @@ def getNatLit? : Expr → Option Nat
 | app (app _ (lit (Literal.natVal x))) _ => some x
 | _ => none
 
+open Lean.Elab.Tactic Lean.Meta in
+def printGoal : TacticM Unit := do
+  let currGoal ← getMainGoal
+  let currGoalType ← getMVarType currGoal
+  logInfo m!"......new goal: {← instantiateMVars currGoalType}"

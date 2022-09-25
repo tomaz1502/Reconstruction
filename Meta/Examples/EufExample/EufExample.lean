@@ -30,8 +30,7 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
           show (f a c = f b d) from lean_s7
         )
       ))
-    have lean_s2 : (a = b) ∧ (c = d) → (f a c = f b d) := by liftOrNToImp lean_s1, 2, x; exact x
+    have lean_s2 := by liftOrNToImp lean_s1, 2
     have lean_s3 : (¬ ((a = b) ∧ (c = d))) ∨ (f a c = f b d) := impliesElim lean_s2
-    -- let lean_s4 := clOr lean_s3
     sorry
  

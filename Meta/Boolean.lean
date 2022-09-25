@@ -162,6 +162,7 @@ def getGroupOrPrefixGoal : Expr → Nat → Expr
 
 syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
 
+-- supposed to be used by other rules
 @[tactic groupOrPrefix] def evalGroupOrPrefix : Tactic := fun stx => withMainContext do
   let hyp ← Tactic.elabTerm stx[1] none
   let prefLen ← 
@@ -183,11 +184,9 @@ syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
     Tactic.closeMainGoal hyp
   else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
 
-def liftOrNToImpGoal (e : Expr) (n : Nat) : Expr :=
-  forallE Name.anonymous (andNE (collectNOrNegArgs e n)) (dropNArgs e n) BinderInfo.default
+syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
 
-syntax (name := liftOrNToImp) "liftOrNToImp" term "," term "," ident : tactic
-
+-- supposed to be used alone
 @[tactic liftOrNToImp] def evalLiftOrNToImp : Tactic :=
   fun stx => withMainContext do
     let prefLen ← 
@@ -199,13 +198,6 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term "," ident : tactic
     let fname1 ← mkIdent <$> mkFreshId
     let hyp ← inferType (← Tactic.elabTerm stx[1] none)
     let _ ← evalTactic (← `(tactic| groupOrPrefix $tstx₁, $tstx₃, $fname1))
-    let mvarId ← getMainGoal
-    let goal := liftOrNToImpGoal hyp prefLen
-    Meta.withMVarContext mvarId do
-      let name := stx[5].getId
-      let p ← Meta.mkFreshExprMVar goal MetavarKind.syntheticOpaque name
-      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name goal p
-      replaceMainGoal [p.mvarId!, mvarIdNew]
     withMainContext do
       let fname2 ← mkIdent <$> mkFreshId
       let _ ← evalTactic (← `(tactic| intros $fname2))
@@ -216,24 +208,3 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term "," ident : tactic
         let a := (ctx.findFromUserName? fname2.getId).get!.toExpr
         let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
         Tactic.closeMainGoal u
-
-example : ¬ A ∨ ¬ B ∨ ¬ C ∨ ¬ D → A ∧ B ∧ C → ¬ D := by
-  intros h₁ h₂
-  have blaa : (¬ A ∨ ¬ B ∨ ¬ C) ∨ ¬ D := sorry
-  have hhh: A ∧ B ∧ C → ¬ D := by
-    intro a
-    apply orImplies₃ blaa
-    exact @deMorgan₂ [A, B, C] a
-
-    /- exact @Function.comp (andN [A, B, C]) (¬ orN (notList [A, B, C])) (¬ D) v u -/ 
-  admit
-
-    /- exact (λ x => orImplies₃ blaa (deMorgan₂ x)) -/
-
-  /- liftNOrToImp h₁, 3, bla -/
-
-  /- exact bla h₂ -/
-  /- have h₃ : (¬ A ∨ ¬ B ∨ ¬ C) ∨ ¬ D := sorry -- por meio de taticas -/
-  /- have bla : ¬ (¬ A ∨ ¬ B ∨ ¬ C) → ¬ D := orImplies₃ h₃ -/
-  /- admit -/
-

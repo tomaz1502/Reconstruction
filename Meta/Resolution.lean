@@ -23,20 +23,6 @@ def getIndex (t o : Expr) : Option Nat :=
   | e => if e == t then some 0
          else none
 
-def getLength (o : Expr) : Nat :=
-  match o with
-  | app (app (const `Or ..) _) e2 => 1 + getLength e2
-  | _ => 1
-
-def getCongAssoc' : Nat → Name → Term
-| 0,     n => mkIdent n
-| i + 1, n => Syntax.mkApp (mkIdent `congOrLeft) #[getCongAssoc' i n]
-
-def getCongAssoc : Nat → Name → List Term
-| 0,     _ => []
-| 1,     n => [getCongAssoc' 0 n]
-| i + 2, n => (getCongAssoc' (i + 1) n) :: (getCongAssoc (i + 1) n)
-
 def tacticsLastIndex (index : Nat) : List Term :=
   (mkIdent `orComm) :: reverse (getCongAssoc (index - 1) `orAssocDir)
 
@@ -69,26 +55,22 @@ syntax (name := reorder) "reorder" term "," ident "," ident : tactic
     match index' with
     | some i => pure i
     | none   => throwError "term not found"
-
   logInfo m!"Reorder {type} for pivot {pivot} (pos {index})"
+
   let l := getLength type
   let arr : List Term :=
     if index = 0 then []
     else if l = index + 1 then tacticsLastIndex index
          else tacticsRegular index
-
   let new_term := reorderGoal pivot type
   logInfo m!"..expected goal is {new_term}"
   let mvarId ← getMainGoal
+
   Meta.withMVarContext mvarId do
     let name := stx[5].getId
     let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
     let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
     replaceMainGoal [p.mvarId!, mvarIdNew]
-    let printGoal : TacticM Unit := do
-      let currGoal ← getMainGoal
-      let currGoalType ← getMVarType currGoal
-      logInfo m!"......new goal: {← instantiateMVars currGoalType}"
     for s in arr do
       logInfo m!"....apply {s}"
       evalTactic (← `(tactic| apply $s))
@@ -116,19 +98,7 @@ theorem resolution_thm₃ : ∀ {A B: Prop}, (A ∨ B) → ¬ A → B := λ orab
 
 theorem resolution_thm₄ : ∀ {A : Prop}, A → ¬ A → False := λ a na => na a
 
--- maybe extract another function and refactor (eliminate (mkNot r) o₂)
-def get_resolution_goal (o₁ o₂ r : Expr) : Expr :=
-  match o₁ with
-  | app s@(app (const `Or ..) e₁) e₂ =>
-    if e₁ == r then get_resolution_goal e₂ o₂ r -- TODO: this is a wrong, if we have multiple ocurrences of r in o₁
-    else app s (get_resolution_goal e₂ o₂ r)
-  | e =>
-    if e == r then
-      if o₂ == mkNot r then mkConst `False else eliminate (mkNot r) o₂
-    else if o₂ == mkNot r then
-      e else app (app (const `Or []) e) (eliminate (mkNot r) o₂)
-
-syntax (name := resolution) "resolution" ident "," ident "," term "," ident : tactic
+syntax (name := resolution) "resolution" ident "," ident "," term : tactic  -- "," ident : tactic
 
 @[tactic resolution] def evalResolution : Tactic :=
   fun stx => withMainContext do
@@ -148,57 +118,26 @@ syntax (name := resolution) "resolution" ident "," ident "," term "," ident : ta
       let ctx ← getLCtx
       let reordFirstHyp ← inferType (ctx.findFromUserName? fname1.getId).get!.toExpr
       let reordSecondHyp ← inferType (ctx.findFromUserName? fname2.getId).get!.toExpr
+      let len₁ := getLength reordFirstHyp
+      let len₂ := getLength reordSecondHyp
 
-      let pivot ← elabTerm stx[5] none
-      let resolvant := get_resolution_goal reordFirstHyp reordSecondHyp pivot
-      let mvarId ← getMainGoal
-      logInfo m!"Resolve [{pivot}]: {reordFirstHyp} <> {reordSecondHyp}"
-      logInfo m!"..expected goal: {← getMVarType mvarId}"
-      Meta.withMVarContext mvarId do
-        let name := stx[7].getId
-        let p ← Meta.mkFreshExprMVar resolvant MetavarKind.syntheticOpaque name
-        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name resolvant p
-        replaceMainGoal [p.mvarId!, mvarIdNew]
-        let len₁ := getLength reordFirstHyp
-        let len₂ := getLength reordSecondHyp
-        -- parenthesize preffix in goal corresponding to first hyp
-        let printGoal : TacticM Unit := do
-          let currGoal ← getMainGoal
-          let currGoalType ← getMVarType currGoal
-          logInfo m!"......new goal: {← instantiateMVars currGoalType}"
-        for s in getCongAssoc (len₁ - 2) `orAssocConv do
-          evalTactic (← `(tactic| apply $s))
-          logInfo m!"....apply {s}"
-          printGoal
+      for s in getCongAssoc (len₁ - 2) `orAssocConv do
+        evalTactic (← `(tactic| apply $s))
+        logInfo m!"....apply {s}"
+        printGoal
 
-        if len₁ > 1 then
-          if len₂ > 1 then
-            evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
-            logInfo m!"..close goal with resolution_thm"
-          else
-            evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
-            logInfo m!"..close goal with resolution_thm₃"
+      if len₁ > 1 then
+        if len₂ > 1 then
+          evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
+          logInfo m!"..close goal with resolution_thm"
         else
-          if len₂ > 1 then
-            evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
-            logInfo m!"..close goal with resolution_thm₂"
-          else
-            evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
-            logInfo m!"..close goal with resolution_thm₄"
-
-        evalTactic (← `(tactic| clear $fname1 $fname2))
-
--- example usage:
-example : A ∨ B ∨ C ∨ D → E ∨ F ∨ ¬ B ∨ G → A ∨ C ∨ D ∨ E ∨ F ∨ G := by
-  intros h₁ h₂
-  resolution h₁, h₂, B, h₃
-
-  have b₁ : B := sorry
-  have b₂ : ¬ B := sorry
-
-  /- have b₃ := resolution_thm₃ b₁ b₂ -/ 
-
-  resolution b₁, b₂, B, b₃
-
-  exact h₃
+          evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
+          logInfo m!"..close goal with resolution_thm₃"
+      else
+        if len₂ > 1 then
+          evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
+          logInfo m!"..close goal with resolution_thm₂"
+        else
+          evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
+          logInfo m!"..close goal with resolution_thm₄"
 

@@ -1,4 +1,6 @@
 import Meta.Boolean
+import Meta.Resolution
+import Meta.PermutateOr
  
 universe u
  
@@ -30,7 +32,10 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
           show (f a c = f b d) from lean_s7
         )
       ))
-    have lean_s2 := by liftOrNToImp lean_s1, 2
+    have lean_s2 : a = b ∧ c = d → f a c = f b d := by liftOrNToImp lean_s1, 2
     have lean_s3 : (¬ ((a = b) ∧ (c = d))) ∨ (f a c = f b d) := impliesElim lean_s2
+    have lean_s5 : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by resolution lean_s0, lean_s3, ((a = b) ∧ (c = d))
+    have lean_s6 : f a c = f b d ∨ ¬ (a = b) ∨ ¬ (c = d) := by permutateOr lean_s5, [2, 0, 1]
+
     sorry
  

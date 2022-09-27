@@ -189,6 +189,7 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
 -- supposed to be used alone
 @[tactic liftOrNToImp] def evalLiftOrNToImp : Tactic :=
   fun stx => withMainContext do
+    -- TODO: don't repeat this
     let prefLen ← 
       match ← getNatLit? <$> Tactic.elabTerm stx[3] none with
       | Option.some i => pure i
@@ -198,13 +199,18 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
     let fname1 ← mkIdent <$> mkFreshId
     let hyp ← inferType (← Tactic.elabTerm stx[1] none)
     let _ ← evalTactic (← `(tactic| groupOrPrefix $tstx₁, $tstx₃, $fname1))
+    let fname2 ← mkIdent <$> mkFreshId
+    let _ ← evalTactic (← `(tactic| intros $fname2))
+    let _ ← evalTactic (← `(tactic| apply orImplies₃ $fname1))
+    let li := listExpr (collectNOrNegArgs hyp prefLen) (Expr.sort Level.zero)
     withMainContext do
-      let fname2 ← mkIdent <$> mkFreshId
-      let _ ← evalTactic (← `(tactic| intros $fname2))
-      let _ ← evalTactic (← `(tactic| apply orImplies₃ $fname1))
-      let li := listExpr (collectNOrNegArgs hyp prefLen) (Expr.sort Level.zero)
-      withMainContext do
-        let ctx ← getLCtx
-        let a := (ctx.findFromUserName? fname2.getId).get!.toExpr
-        let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
-        Tactic.closeMainGoal u
+      let ctx ← getLCtx
+      let a := (ctx.findFromUserName? fname2.getId).get!.toExpr
+      let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
+      Tactic.closeMainGoal u
+
+theorem eqResolve (P Q : Prop) : P → P = Q → Q := by
+  intros h₁ h₂
+  rewrite [← h₂]
+  exact h₁
+

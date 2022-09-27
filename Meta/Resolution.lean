@@ -44,39 +44,44 @@ def reorderGoal (t o : Expr) : Expr :=
   -- useful for corner cases (resolution that results in empty clause)
   | _ => t
 
+-- TODO: write cores for every rule
+def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+  withMainContext do
+    let type ← Meta.inferType hyp
+    let index' := getIndex pivot type
+    let index ←
+      match index' with
+      | some i => pure i
+      | none   => throwError "term not found"
+    /- logInfo m!"Reorder {type} for pivot {pivot} (pos {index})" -/
+
+    let l := getLength type
+    let arr : List Term :=
+      if index = 0 then []
+      else if l = index + 1 then tacticsLastIndex index
+           else tacticsRegular index
+    let new_term := reorderGoal pivot type
+    /- logInfo m!"..expected goal is {new_term}" -/
+    let mvarId ← getMainGoal
+
+    Meta.withMVarContext mvarId do
+      let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
+      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
+      replaceMainGoal [p.mvarId!, mvarIdNew]
+      for s in arr do
+        /- logInfo m!"....apply {s}" -/
+        evalTactic (← `(tactic| apply $s))
+        /- printGoal -/
+      /- logInfo m!"..close goal\n" -/
+      Tactic.closeMainGoal hyp
+
 syntax (name := reorder) "reorder" term "," ident "," ident : tactic
 
 @[tactic reorder] def evalReorder : Tactic := fun stx => withMainContext do
   let pivot ← elabTerm stx[1] none
   let hyp ← elabTerm stx[3] none
-  let type ← Meta.inferType hyp
-  let index' := getIndex pivot type
-  let index ←
-    match index' with
-    | some i => pure i
-    | none   => throwError "term not found"
-  logInfo m!"Reorder {type} for pivot {pivot} (pos {index})"
-
-  let l := getLength type
-  let arr : List Term :=
-    if index = 0 then []
-    else if l = index + 1 then tacticsLastIndex index
-         else tacticsRegular index
-  let new_term := reorderGoal pivot type
-  logInfo m!"..expected goal is {new_term}"
-  let mvarId ← getMainGoal
-
-  Meta.withMVarContext mvarId do
-    let name := stx[5].getId
-    let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
-    let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
-    replaceMainGoal [p.mvarId!, mvarIdNew]
-    for s in arr do
-      logInfo m!"....apply {s}"
-      evalTactic (← `(tactic| apply $s))
-      printGoal
-    logInfo m!"..close goal\n"
-    Tactic.closeMainGoal hyp
+  let name := stx[5].getId
+  reorderCore pivot hyp name
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
@@ -98,7 +103,7 @@ theorem resolution_thm₃ : ∀ {A B: Prop}, (A ∨ B) → ¬ A → B := λ orab
 
 theorem resolution_thm₄ : ∀ {A : Prop}, A → ¬ A → False := λ a na => na a
 
-syntax (name := resolution) "resolution" ident "," ident "," term : tactic  -- "," ident : tactic
+syntax (name := resolution) "resolution" ident "," ident "," term : tactic
 
 @[tactic resolution] def evalResolution : Tactic :=
   fun stx => withMainContext do

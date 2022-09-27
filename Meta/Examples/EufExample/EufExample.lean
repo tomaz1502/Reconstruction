@@ -34,8 +34,18 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
       ))
     have lean_s2 : a = b ∧ c = d → f a c = f b d := by liftOrNToImp lean_s1, 2
     have lean_s3 : (¬ ((a = b) ∧ (c = d))) ∨ (f a c = f b d) := impliesElim lean_s2
-    have lean_s5 : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by resolution lean_s0, lean_s3, ((a = b) ∧ (c = d))
+    have lean_s5 : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by resolutionZ lean_s0, lean_s3, ((a = b) ∧ (c = d))
     have lean_s6 : f a c = f b d ∨ ¬ (a = b) ∨ ¬ (c = d) := by permutateOr lean_s5, [2, 0, 1]
-
+    have lean_s7 := lean_a4
+    have lean_s8 : (¬ (p₂ ∧ p₃)) ∨ p₃ := @cnfAndPos ([p₂, p₃]) 1 (by simp)
+    have lean_s9 : p₃ ∨ (¬ (p₂ ∧ p₃)) := by permutateOr lean_s8, [1, 0]
+    have lean_s10 := lean_a3
+    have lean_s11 : (p₁ ∧ True) = p₁ := sorry
+    have lean_s12 : p₁ := eqResolve lean_a2 lean_s11
+    have lean_s13 := lean_s12
+    have lean_s14 : p₂ ∧ p₃ := by resolutionO lean_s10, lean_s13, p₁
+    have lean_s15 : p₃ := by resolutionO lean_s9, lean_s14, (p₂ ∧ p₃)
+    have lean_s16 : ¬ (f a c = f b d) := by resolutionO lean_s7, lean_s15, p₃
+    have lean_s17 : ¬ (a = b) ∨ ¬ (c = d) := by resolutionZ lean_s6, lean_s16, (f a c = f b d)
     sorry
  

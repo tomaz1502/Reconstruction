@@ -16,18 +16,6 @@ syntax (name := elabTerm) "#elab" term : command
 
 end Elab
 
-
-def f : Bool → Nat := sorry
-def g : Nat → Prop := sorry
-
-#elab Prop
-
-#elab @Function.comp Bool Nat Prop g f
-
-variable (P Q : Prop)
-#check Lean.Expr
-
-
-
 def main : IO Unit :=
   IO.println s!"Hello, world!"
+

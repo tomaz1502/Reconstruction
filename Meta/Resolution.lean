@@ -53,26 +53,19 @@ def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       match index' with
       | some i => pure i
       | none   => throwError "term not found"
-    /- logInfo m!"Reorder {type} for pivot {pivot} (pos {index})" -/
-
     let l := getLength type
     let arr : List Term :=
       if index = 0 then []
       else if l = index + 1 then tacticsLastIndex index
            else tacticsRegular index
     let new_term := reorderGoal pivot type
-    /- logInfo m!"..expected goal is {new_term}" -/
     let mvarId ← getMainGoal
-
     Meta.withMVarContext mvarId do
       let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
       let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
       replaceMainGoal [p.mvarId!, mvarIdNew]
       for s in arr do
-        /- logInfo m!"....apply {s}" -/
         evalTactic (← `(tactic| apply $s))
-        /- printGoal -/
-      /- logInfo m!"..close goal\n" -/
       Tactic.closeMainGoal hyp
 
 syntax (name := reorder) "reorder" term "," ident "," ident : tactic
@@ -103,46 +96,58 @@ theorem resolution_thm₃ : ∀ {A B: Prop}, (A ∨ B) → ¬ A → B := λ orab
 
 theorem resolution_thm₄ : ∀ {A : Prop}, A → ¬ A → False := λ a na => na a
 
-syntax (name := resolution) "resolution" ident "," ident "," term : tactic
+def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Unit := do
+  let fname1 ← mkIdent <$> mkFreshId
+  let fname2 ← mkIdent <$> mkFreshId
+  let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
+  evalTactic  (← `(tactic| reorder $pivotTerm, $firstHyp, $fname1))
+  evalTactic  (← `(tactic| reorder $notPivot, $secondHyp, $fname2))
 
-@[tactic resolution] def evalResolution : Tactic :=
+  -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
+  -- thats why we have another `withMainContext` here
+  withMainContext do
+    let ctx ← getLCtx
+    let reordFirstHyp ← inferType (ctx.findFromUserName? fname1.getId).get!.toExpr
+    let reordSecondHyp ← inferType (ctx.findFromUserName? fname2.getId).get!.toExpr
+    let len₁ := getLength reordFirstHyp
+    let len₂ := getLength reordSecondHyp
+
+    for s in getCongAssoc (len₁ - 2) `orAssocConv do
+      logInfo m!"....apply {s}"
+      evalTactic (← `(tactic| apply $s))
+      printGoal
+
+    if len₁ > 1 then
+      if len₂ > 1 then
+        evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
+        logInfo m!"..close goal with resolution_thm"
+      else
+        evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
+        logInfo m!"..close goal with resolution_thm₃"
+    else
+      if len₂ > 1 then
+        evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
+        logInfo m!"..close goal with resolution_thm₂"
+      else
+        evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
+        logInfo m!"..close goal with resolution_thm₄"
+  
+
+syntax (name := resolutionZ) "resolutionZ" ident "," ident "," term : tactic
+
+@[tactic resolutionZ] def evalResolutionZ : Tactic :=
   fun stx => withMainContext do
     let firstHyp : Ident := ⟨ stx[1] ⟩
     let secondHyp : Ident := ⟨ stx[3] ⟩
-    let fname1 ← mkIdent <$> mkFreshId
-    let fname2 ← mkIdent <$> mkFreshId
     let pivotTerm : Term := ⟨ stx[5] ⟩
-    let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
+    resolutionCore firstHyp secondHyp pivotTerm
 
-    evalTactic  (← `(tactic| reorder $pivotTerm, $firstHyp, $fname1))
-    evalTactic  (← `(tactic| reorder $notPivot, $secondHyp, $fname2))
+syntax (name := resolutionO) "resolutionO" ident "," ident "," term : tactic
 
-    -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
-    -- thats why we have another `withMainContext` here
-    withMainContext do
-      let ctx ← getLCtx
-      let reordFirstHyp ← inferType (ctx.findFromUserName? fname1.getId).get!.toExpr
-      let reordSecondHyp ← inferType (ctx.findFromUserName? fname2.getId).get!.toExpr
-      let len₁ := getLength reordFirstHyp
-      let len₂ := getLength reordSecondHyp
-
-      for s in getCongAssoc (len₁ - 2) `orAssocConv do
-        evalTactic (← `(tactic| apply $s))
-        logInfo m!"....apply {s}"
-        printGoal
-
-      if len₁ > 1 then
-        if len₂ > 1 then
-          evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
-          logInfo m!"..close goal with resolution_thm"
-        else
-          evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
-          logInfo m!"..close goal with resolution_thm₃"
-      else
-        if len₂ > 1 then
-          evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
-          logInfo m!"..close goal with resolution_thm₂"
-        else
-          evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
-          logInfo m!"..close goal with resolution_thm₄"
+@[tactic resolutionO] def evalResolutionO : Tactic :=
+  fun stx => withMainContext do
+    let firstHyp : Ident := ⟨ stx[1] ⟩
+    let secondHyp : Ident := ⟨ stx[3] ⟩
+    let pivotTerm : Term := ⟨ stx[5] ⟩
+    resolutionCore secondHyp firstHyp pivotTerm
 

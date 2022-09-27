@@ -5,6 +5,8 @@ import Meta.Util
 open Lean Lean.Elab Lean.Elab.Tactic Lean.Meta Expr Classical
 open Lean.Elab.Term
 
+open Nat List
+
 theorem notImplies1 : ∀ {P Q : Prop}, ¬ (P → Q) → P := by
   intros P Q h
   cases Classical.em P with
@@ -117,11 +119,11 @@ theorem deMorgan : ∀ {l : List Prop}, ¬ orN (notList l) → andN l :=
      exact match l with
      | []   => True.intro
      | [t]  => by simp [andN]
-                  simp [notList, orN, List.map] at h
+                  simp [notList, orN, map] at h
                   cases em t with
                   | inl tt  => exact tt
                   | inr ntt => exact False.elim (h ntt)
-     | h₁::h₂::t => by simp [orN, notList, List.map] at h
+     | h₁::h₂::t => by simp [orN, notList, map] at h
                        have ⟨ t₁, t₂ ⟩ := deMorganSmall h
                        simp [orN] at t₂
                        have ih := @deMorgan (h₂::t) t₂
@@ -134,7 +136,7 @@ theorem deMorgan₂ : ∀ {l : List Prop}, andN l → ¬ orN (notList l) :=
      exact match l with
      | [] => by simp [orN, notList]
      | [t] => by simp [orN, notList]; simp [andN] at h; exact doubleNeg₂ h
-     | h₁::h₂::t => by simp [orN, notList, List.map]
+     | h₁::h₂::t => by simp [orN, notList, map]
                        simp [andN] at h
                        apply deMorganSmall₂
                        have nnh₁ := doubleNeg₂ (And.left h)
@@ -148,6 +150,36 @@ theorem cnfAndNeg : ∀ (l : List Prop), andN l ∨ orN (notList l) :=
      intro h
      exact deMorgan h
  
+theorem lessThanOne : ∀ {i : Nat}, i < 1 → i = 0 := by
+  intros i h
+  match i with
+  | zero => exact rfl
+  | succ i' =>
+    cases h with
+    | step h' => cases h'
+
+theorem cnfAndPos : ∀ (l : List Prop) (i : Nat), i < l.length →  ¬ (andN l) ∨ l.get! i :=
+  by intros l i hi
+     apply orImplies
+     intro h
+     have h' := doubleNeg h
+     match l with
+     | [] => cases hi
+     | [p] =>
+       have i0 : i = 0 := lessThanOne hi
+       rewrite [i0]
+       exact h'
+     | p₁::p₂::ps =>
+       match i with
+       | zero => exact And.left h' 
+       | succ i' =>
+         have r:
+           length (p₁::p₂::ps) = succ (length (p₂::ps)) := by simp
+         rewrite [r] at hi
+         have hi' := Nat.le_of_succ_le_succ hi
+         have IH := cnfAndPos (p₂::ps) i' hi'
+         exact orImplies₂ IH (And.right h')
+
 theorem cong : ∀ {A B : Type u} {f₁ f₂ : A → B} {t₁ t₂ : A},
   f₁ = f₂ → t₁ = t₂ → f₁ t₁ = f₂ t₂ :=
   by intros A B f₁ f₂ t₁ t₂ h₁ h₂
@@ -156,8 +188,8 @@ theorem cong : ∀ {A B : Type u} {f₁ f₂ : A → B} {t₁ t₂ : A},
 
 def getGroupOrPrefixGoal : Expr → Nat → Expr
 | e, n => let props := collectPropsInOrChain e
-          let left := createOrChain (List.take n props)
-          let right := createOrChain (List.drop n props)
+          let left := createOrChain (take n props)
+          let right := createOrChain (drop n props)
           app (app (mkConst `Or) left) right
 
 syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
@@ -179,7 +211,7 @@ syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
       let p ← Meta.mkFreshExprMVar newTerm MetavarKind.syntheticOpaque name
       let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newTerm p
       replaceMainGoal [p.mvarId!, mvarIdNew]
-    for t in List.reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
+    for t in reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
       evalTactic  (← `(tactic| apply $t))
     Tactic.closeMainGoal hyp
   else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
@@ -209,7 +241,7 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
       let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
       Tactic.closeMainGoal u
 
-theorem eqResolve (P Q : Prop) : P → P = Q → Q := by
+theorem eqResolve {P Q : Prop} : P → P = Q → Q := by
   intros h₁ h₂
   rewrite [← h₂]
   exact h₁

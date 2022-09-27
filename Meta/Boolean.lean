@@ -158,26 +158,28 @@ theorem lessThanOne : ∀ {i : Nat}, i < 1 → i = 0 := by
     cases h with
     | step h' => cases h'
 
-theorem cnfAndPos : ∀ (l : List Prop) (i : Nat), i < l.length →  ¬ (andN l) ∨ l.get! i :=
-  by intros l i hi
+def getProp : List Prop → Nat → Prop
+  | [], _ => True
+  | a::_, 0 => a
+  | _::as, (i + 1) => getProp as i
+
+theorem cnfAndPos : ∀ (l : List Prop) (i : Nat),  ¬ (andN l) ∨ getProp l i :=
+  by intros l i
      apply orImplies
      intro h
      have h' := doubleNeg h
      match l with
-     | [] => cases hi
+     | [] => exact True.intro
      | [p] =>
-       have i0 : i = 0 := lessThanOne hi
-       rewrite [i0]
-       exact h'
+       match i with
+       | 0 => exact h'
+       | _ + 1 => exact True.intro
      | p₁::p₂::ps =>
        match i with
        | zero => exact And.left h' 
        | succ i' =>
-         have r:
-           length (p₁::p₂::ps) = succ (length (p₂::ps)) := by simp
-         rewrite [r] at hi
-         have hi' := Nat.le_of_succ_le_succ hi
-         have IH := cnfAndPos (p₂::ps) i' hi'
+         simp [getProp]
+         have IH :=  cnfAndPos (p₂::ps) i'
          exact orImplies₂ IH (And.right h')
 
 theorem cong : ∀ {A B : Type u} {f₁ f₂ : A → B} {t₁ t₂ : A},

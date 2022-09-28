@@ -40,8 +40,8 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
     have lean_s8  : (¬ (p₂ ∧ p₃)) ∨ p₃ := @cnfAndPos ([p₂, p₃]) 1
     have lean_s9  : p₃ ∨ (¬ (p₂ ∧ p₃)) := by permutateOr lean_s8, [1, 0]
     have lean_s10 := lean_a3
-    have lean_s11 : (p₁ ∧ True) = p₁ := sorry
-    have lean_s12 : p₁ := eqResolve lean_a2 lean_s11
+    have lean_s11 : (p₁ ∧ True) → p₁ := And.left
+    have lean_s12 : p₁ := lean_s11 lean_a2
     have lean_s13 := lean_s12
     have lean_s14 : p₂ ∧ p₃ := by resolution_2 lean_s10, lean_s13, p₁
     have lean_s15 : p₃ := by resolution_2 lean_s9, lean_s14, (p₂ ∧ p₃)

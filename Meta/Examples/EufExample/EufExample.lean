@@ -47,5 +47,8 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
     have lean_s15 : p₃ := by resolutionO lean_s9, lean_s14, (p₂ ∧ p₃)
     have lean_s16 : ¬ (f a c = f b d) := by resolutionO lean_s7, lean_s15, p₃
     have lean_s17 : ¬ (a = b) ∨ ¬ (c = d) := by resolutionZ lean_s6, lean_s16, (f a c = f b d)
-    sorry
+    have lean_s18 := lean_a1
+    have lean_s19 : ¬ (a = b) := by resolutionO lean_s17, lean_s18, (c = d)
+    have lean_s20 := lean_a0
+    show False from by resolutionO lean_s19, lean_s20, (a = b)
  

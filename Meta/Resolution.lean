@@ -144,18 +144,18 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
         logInfo m!"..close goal with resolution_thm₄"
   
 
-syntax (name := resolutionZ) "resolutionZ" ident "," ident "," term : tactic
+syntax (name := resolution_1) "resolution_1" ident "," ident "," term : tactic
 
-@[tactic resolutionZ] def evalResolutionZ : Tactic :=
+@[tactic resolution_1] def evalResolution_1 : Tactic :=
   fun stx => withMainContext do
     let firstHyp : Ident := ⟨ stx[1] ⟩
     let secondHyp : Ident := ⟨ stx[3] ⟩
     let pivotTerm : Term := ⟨ stx[5] ⟩
     resolutionCore firstHyp secondHyp pivotTerm
 
-syntax (name := resolutionO) "resolutionO" ident "," ident "," term : tactic
+syntax (name := resolution_2) "resolution_2" ident "," ident "," term : tactic
 
-@[tactic resolutionO] def evalResolutionO : Tactic :=
+@[tactic resolution_2] def evalResolution_2 : Tactic :=
   fun stx => withMainContext do
     let firstHyp : Ident := ⟨ stx[1] ⟩
     let secondHyp : Ident := ⟨ stx[3] ⟩

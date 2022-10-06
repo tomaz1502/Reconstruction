@@ -194,54 +194,44 @@ def getGroupOrPrefixGoal : Expr → Nat → Expr
           let right := createOrChain (drop n props)
           app (app (mkConst `Or) left) right
 
-syntax (name := groupOrPrefix) "groupOrPrefix" term "," term "," ident : tactic
-
--- supposed to be used by other rules
-@[tactic groupOrPrefix] def evalGroupOrPrefix : Tactic := fun stx => withMainContext do
-  let hyp ← Tactic.elabTerm stx[1] none
-  let prefLen ← 
-    match ← getNatLit? <$> Tactic.elabTerm stx[3] none with
-    | Option.some i => pure i
-    | Option.none   => throwError "[groupOrPrefix]: second argument must be a nat lit"
-  let type ← Meta.inferType hyp
-  let l := getLength type
-  if prefLen > 1 && prefLen < l then
-    let mvarId ← getMainGoal
-    Meta.withMVarContext mvarId do
-      let name := stx[5].getId
-      let newTerm := getGroupOrPrefixGoal type prefLen
-      let p ← Meta.mkFreshExprMVar newTerm MetavarKind.syntheticOpaque name
-      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newTerm p
-      replaceMainGoal [p.mvarId!, mvarIdNew]
-    for t in reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
-      evalTactic  (← `(tactic| apply $t))
-    Tactic.closeMainGoal hyp
-  else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
+-- groups the given prefix of the given hypothesis (assuming it is an
+-- or-chain) and adds this as a new hypothesis with the given name
+def groupOrPrefixCore : Expr → Nat → Name → TacticM Unit :=
+  fun hyp prefLen name => withMainContext do
+    let type ← Meta.inferType hyp
+    let l := getLength type
+    if prefLen > 1 && prefLen < l then
+      let mvarId ← getMainGoal
+      Meta.withMVarContext mvarId do
+        let newTerm := getGroupOrPrefixGoal type prefLen
+        let p ← Meta.mkFreshExprMVar newTerm MetavarKind.syntheticOpaque name
+        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newTerm p
+        replaceMainGoal [p.mvarId!, mvarIdNew]
+      for t in reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
+        evalTactic  (← `(tactic| apply $t))
+      Tactic.closeMainGoal hyp
+    else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
 
 syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
 
--- supposed to be used alone
 @[tactic liftOrNToImp] def evalLiftOrNToImp : Tactic :=
   fun stx => withMainContext do
-    -- TODO: don't repeat this
     let prefLen ← 
       match ← getNatLit? <$> Tactic.elabTerm stx[3] none with
       | Option.some i => pure i
       | Option.none   => throwError "[liftNOrToImp]: second argument must be a nat lit"
-    let tstx₁ : Term := ⟨stx[1]⟩
-    let tstx₃ : Term := ⟨stx[3]⟩
-    let fname1 ← mkIdent <$> mkFreshId
-    let hyp ← inferType (← Tactic.elabTerm stx[1] none)
-    let _ ← evalTactic (← `(tactic| groupOrPrefix $tstx₁, $tstx₃, $fname1))
+    let fname1 ← mkFreshId
+    let hyp ← Tactic.elabTerm stx[1] none
+    let type ← inferType hyp
+    groupOrPrefixCore hyp prefLen fname1
     let fname2 ← mkIdent <$> mkFreshId
     let _ ← evalTactic (← `(tactic| intros $fname2))
-    let _ ← evalTactic (← `(tactic| apply orImplies₃ $fname1))
-    let li := listExpr (collectNOrNegArgs hyp prefLen) (Expr.sort Level.zero)
+    let _ ← evalTactic (← `(tactic| apply orImplies₃ $(mkIdent fname1)))
+    let li := listExpr (collectNOrNegArgs type prefLen) (Expr.sort Level.zero)
     withMainContext do
       let ctx ← getLCtx
-      let a := (ctx.findFromUserName? fname2.getId).get!.toExpr
-      let u : Expr := mkApp (mkApp (mkConst `deMorgan₂) li) a
-      Tactic.closeMainGoal u
+      let hyp2 := (ctx.findFromUserName? fname2.getId).get!.toExpr
+      Tactic.closeMainGoal $ mkApp (mkApp (mkConst `deMorgan₂) li) hyp2
 
 theorem eqResolve {P Q : Prop} : P → P = Q → Q := by
   intros h₁ h₂

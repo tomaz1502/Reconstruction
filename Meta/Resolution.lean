@@ -35,16 +35,25 @@ def tacticsRegular (index : Nat) : List Term :=
   let tactics₄ := reverse (getCongAssoc index `orAssocDir)
   tactics₁ ++ tactics₂ ++ tactics₃ ++ tactics₄
 
--- defines the expr corresponding to the goal of reorder,
+-- defines the expr corresponding to the goal of pull,
 -- assuming we want to pull `t` in `o`
-def reorderGoal (t o : Expr) : Expr :=
+def pullGoal (t o : Expr) : Expr :=
   match o with
-  | app (app (const `Or ..) _) _ => app (app (mkConst `Or) t) (eliminate t o)
+  | app (app (const `Or ..) _) _ => mkApp (mkApp (mkConst `Or) t) (eliminate t o)
   -- if `o` is a single expression then we're assuming it is equals to `t`
   -- useful for corner cases (resolution that results in empty clause)
   | _ => t
 
-def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+def pull2Goal (t o : Expr) : Expr :=
+  match o with
+  | app (app (const `Or ..) e₁) e₂ => 
+    let rest := eliminate t e₂
+    mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest)
+  | _ => o
+
+-- insert pivot in the first position of the or-chain
+-- representede by hyp
+def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
     let type ← Meta.inferType hyp
     let index' := getIndex pivot type
@@ -57,7 +66,7 @@ def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       if index = 0 then []
       else if l = index + 1 then tacticsLastIndex index
            else tacticsRegular index
-    let new_term := reorderGoal pivot type
+    let new_term := pullGoal pivot type
     let mvarId ← getMainGoal
     Meta.withMVarContext mvarId do
       let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
@@ -66,6 +75,42 @@ def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       for s in arr do
         evalTactic (← `(tactic| apply $s))
       Tactic.closeMainGoal hyp
+
+-- insert pivot in the second position of the or-chain
+-- representede by hyp
+def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+  withMainContext do
+    let fname ← mkFreshId
+    pullCore pivot hyp fname
+    withMainContext do
+      let ctx ← getLCtx
+      let fident := mkIdent fname
+      let pullHyp ← inferType (ctx.findFromUserName? fident.getId).get!.toExpr
+      let h₁ := mkApp (mkConst `orAssocDir) pullHyp
+      let h₂ := mkApp (mkApp (mkConst `congOrRight) (mkConst `orComm)) h₁
+      let h₃ := mkApp (mkConst `orAssocConv) h₂
+      let newGoal := pull2Goal pivot (← inferType hyp)
+      let mvarId ← getMainGoal
+      Meta.withMVarContext mvarId do
+        let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
+        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
+        replaceMainGoal [p.mvarId!, mvarIdNew]
+        Tactic.closeMainGoal h₃
+ 
+syntax (name := pull2) "pull2" term "," term "," ident : tactic
+
+@[tactic pull2] def evalPull2 : Tactic := fun stx => withMainContext do
+  let pivot ← elabTerm stx[1] none
+  let hyp ← elabTerm stx[3] none
+  let name := stx[5].getId
+  pull2Core pivot hyp name     
+
+example : A ∨ B ∨ C ∨ D ∨ E → B ∨ A ∨ C ∨ D ∨ E := by
+  intro h
+  pull2 D, h, ble
+
+
+  exact orAssocConv (congOrRight orComm (orAssocDir h))
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
@@ -95,8 +140,8 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let notPivotExpr ← elabTerm notPivot none
   let firstHypExpr ← elabTerm firstHyp none
   let secondHypExpr ← elabTerm secondHyp none
-  reorderCore pivotExpr    firstHypExpr  fname1
-  reorderCore notPivotExpr secondHypExpr fname2
+  pullCore pivotExpr    firstHypExpr  fname1
+  pullCore notPivotExpr secondHypExpr fname2
   -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
   -- thats why we have another `withMainContext` here
   withMainContext do

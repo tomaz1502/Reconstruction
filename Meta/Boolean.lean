@@ -238,3 +238,9 @@ theorem eqResolve {P Q : Prop} : P → P = Q → Q := by
   rewrite [← h₂]
   exact h₁
 
+theorem dupOr {P Q : Prop} : P ∨ P ∨ Q → P ∨ Q := λ h =>
+  match h with
+  | Or.inl p          => Or.inl p
+  | Or.inr (Or.inl p) => Or.inl p
+  | Or.inr (Or.inr q) => Or.inr q
+

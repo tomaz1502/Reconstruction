@@ -41,7 +41,7 @@ where go : List Nat → Expr → Expr → TacticM Expr
            | some e => pure e
            | none   => throwError "invalid permutation"
          logInfo m!"{ithExpr}"
-         reorderCore ithExpr hyp fnameId
+         pullCore ithExpr hyp fnameId
          withMainContext do
            let ctx ← getLCtx
            let hyp' := (ctx.findFromUserName? fnameId).get!.toExpr

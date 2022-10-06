@@ -44,7 +44,6 @@ def reorderGoal (t o : Expr) : Expr :=
   -- useful for corner cases (resolution that results in empty clause)
   | _ => t
 
--- TODO: write cores for every rule
 def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
     let type ← Meta.inferType hyp
@@ -68,14 +67,6 @@ def reorderCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
         evalTactic (← `(tactic| apply $s))
       Tactic.closeMainGoal hyp
 
-syntax (name := reorder) "reorder" term "," ident "," ident : tactic
-
-@[tactic reorder] def evalReorder : Tactic := fun stx => withMainContext do
-  let pivot ← elabTerm stx[1] none
-  let hyp ← elabTerm stx[3] none
-  let name := stx[5].getId
-  reorderCore pivot hyp name
-
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
   cases h₁ with
@@ -96,22 +87,24 @@ theorem resolution_thm₃ : ∀ {A B: Prop}, (A ∨ B) → ¬ A → B := λ orab
 
 theorem resolution_thm₄ : ∀ {A : Prop}, A → ¬ A → False := λ a na => na a
 
-#check Ident
-
 def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Unit := do
-  let fname1 ← mkIdent <$> mkFreshId
-  let fname2 ← mkIdent <$> mkFreshId
+  let fname1 ← mkFreshId
+  let fname2 ← mkFreshId
   let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
-  evalTactic  (← `(tactic| reorder $pivotTerm, $firstHyp, $fname1))
-  evalTactic  (← `(tactic| reorder $notPivot, $secondHyp, $fname2))
+  let pivotExpr ← elabTerm pivotTerm none
+  let notPivotExpr ← elabTerm notPivot none
+  let firstHypExpr ← elabTerm firstHyp none
+  let secondHypExpr ← elabTerm secondHyp none
+  reorderCore pivotExpr    firstHypExpr  fname1
+  reorderCore notPivotExpr secondHypExpr fname2
   -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
   -- thats why we have another `withMainContext` here
   withMainContext do
-    /- let bla ← elabTerm fname1 none -/
-    /- let ble ← elabTerm fname2 none -/
     let ctx ← getLCtx
-    let reordFirstHyp ← inferType (ctx.findFromUserName? fname1.getId).get!.toExpr
-    let reordSecondHyp ← inferType (ctx.findFromUserName? fname2.getId).get!.toExpr
+    let fident1 := mkIdent fname1
+    let fident2 := mkIdent fname2
+    let reordFirstHyp ← inferType (ctx.findFromUserName? fident1.getId).get!.toExpr
+    let reordSecondHyp ← inferType (ctx.findFromUserName? fident2.getId).get!.toExpr
     let len₁ := getLength reordFirstHyp
     let len₂ := getLength reordSecondHyp
 
@@ -127,20 +120,20 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
     if len₁ > 1 then
       if len₂ > 1 then
         /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm $fname1 $fname2))
+        evalTactic (← `(tactic| exact resolution_thm $fident1 $fident2))
         logInfo m!"..close goal with resolution_thm"
       else
         /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₃) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₃ $fname1 $fname2))
+        evalTactic (← `(tactic| exact resolution_thm₃ $fident1 $fident2))
         logInfo m!"..close goal with resolution_thm₃"
     else
       if len₂ > 1 then
         /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₂) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₂ $fname1 $fname2))
+        evalTactic (← `(tactic| exact resolution_thm₂ $fident1 $fident2))
         logInfo m!"..close goal with resolution_thm₂"
       else
         /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₄) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₄ $fname1 $fname2))
+        evalTactic (← `(tactic| exact resolution_thm₄ $fident1 $fident2))
         logInfo m!"..close goal with resolution_thm₄"
   
 

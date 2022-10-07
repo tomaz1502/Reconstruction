@@ -50,7 +50,7 @@ def tacticsRegular (index : Nat) : List Term :=
 def pullGoal (i : Nat) (o : Expr) : Expr :=
   match o with
   | app (app (const `Or ..) _) _ =>
-    let rest := eliminateIndex i o
+    let rest    := eliminateIndex i o
     let ithExpr := (collectPropsInOrChain o).get! i
     mkApp (mkApp (mkConst `Or) ithExpr) rest
   -- if `o` is a single expression then we're assuming
@@ -58,12 +58,20 @@ def pullGoal (i : Nat) (o : Expr) : Expr :=
   -- that results in empty clause)
   | e => e
 
-def pull2Goal (t o : Expr) : Expr :=
+def pull2Goal (i : Nat) (o : Expr) : Expr :=
   match o with
-  | app (app (const `Or ..) e₁) e₂ => 
-    let rest := eliminate t e₂
-    mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest)
+  | app (app (const `Or ..) e₁) _ =>
+    let rest    := eliminateIndex i o
+    let ithExpr := (collectPropsInOrChain o).get! i
+    mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) ithExpr) rest)
   | _ => o
+
+/- def pull2Goal (t o : Expr) : Expr := -/
+/-   match o with -/
+/-   | app (app (const `Or ..) e₁) e₂ => -/ 
+/-     let rest := eliminate t e₂ -/
+/-     mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest) -/
+/-   | _ => o -/
 
 def pullIndex (index : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
@@ -94,12 +102,10 @@ def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       | none   => throwError "term not found"
     pullIndex index hyp type name
 
--- insert pivot in the second position of the or-chain
--- representede by hyp
-def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+def pull2Index (i : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
     let fname ← mkFreshId
-    pullCore pivot hyp fname
+    pullIndex i hyp type fname
     withMainContext do
       let ctx ← getLCtx
       let fident := mkIdent fname
@@ -107,7 +113,7 @@ def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       let h₁ := mkApp (mkConst `orAssocDir) pullHyp
       let h₂ := mkApp (mkApp (mkConst `congOrRight) (mkConst `orComm)) h₁
       let h₃ := mkApp (mkConst `orAssocConv) h₂
-      let newGoal := pull2Goal pivot (← inferType hyp)
+      let newGoal := pull2Goal i type
       let mvarId ← getMainGoal
       Meta.withMVarContext mvarId do
         let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
@@ -115,6 +121,18 @@ def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
         replaceMainGoal [p.mvarId!, mvarIdNew]
         Tactic.closeMainGoal h₃
         evalTactic (← `(tactic| clear $fident))
+
+-- insert pivot in the second position of the or-chain
+-- representede by hyp
+def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+  withMainContext do
+    let type ← Meta.inferType hyp
+    let index' := getIndex pivot type
+    let index ←
+      match index' with
+      | some i => pure i
+      | none   => throwError "term not found"
+    pull2Index index hyp type name
  
 syntax (name := pull2) "pull2" term "," term "," ident : tactic
 
@@ -126,9 +144,7 @@ syntax (name := pull2) "pull2" term "," term "," ident : tactic
 
 /- example : C ∨ B ∨ C ∨ D ∨ E → C ∨ C ∨ B ∨ D ∨ E := by -/
 /-   intro h -/
-
 /-   pull2 C, h, ble -/
-
 /-   exact ble -/
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by

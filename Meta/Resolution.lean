@@ -14,6 +14,18 @@ def eliminate (e o : Expr) : Expr :=
         app s (eliminate e e2)
   | e => e
 
+def eliminateIndex (i : Nat) (e : Expr) : Expr :=
+  match e with
+  | app (app (const `Or ..) e1) e2 =>
+    match i with
+    | 0 => e2
+    | 1 => match e2 with
+           | app (app (const `Or ..) _) e3 => mkApp (mkApp (mkConst `Or) e1) e3
+           | _ => e1
+    | i' =>
+        mkApp (mkApp (mkConst `Or) e1) $ eliminateIndex (i' - 1) e2
+  | e => e
+
 -- assuming `o` to be an OrChain, returns how many Props are
 -- to the left of `t`
 def getIndex (t o : Expr) : Option Nat :=
@@ -35,14 +47,16 @@ def tacticsRegular (index : Nat) : List Term :=
   let tactics₄ := reverse (getCongAssoc index `orAssocDir)
   tactics₁ ++ tactics₂ ++ tactics₃ ++ tactics₄
 
--- defines the expr corresponding to the goal of pull,
--- assuming we want to pull `t` in `o`
-def pullGoal (t o : Expr) : Expr :=
+def pullGoal (i : Nat) (o : Expr) : Expr :=
   match o with
-  | app (app (const `Or ..) _) _ => mkApp (mkApp (mkConst `Or) t) (eliminate t o)
-  -- if `o` is a single expression then we're assuming it is equals to `t`
-  -- useful for corner cases (resolution that results in empty clause)
-  | _ => t
+  | app (app (const `Or ..) _) _ =>
+    let rest := eliminateIndex i o
+    let ithExpr := (collectPropsInOrChain o).get! i
+    mkApp (mkApp (mkConst `Or) ithExpr) rest
+  -- if `o` is a single expression then we're assuming
+  -- it is equals to `t` useful for corner cases (resolution
+  -- that results in empty clause)
+  | e => e
 
 def pull2Goal (t o : Expr) : Expr :=
   match o with
@@ -50,6 +64,23 @@ def pull2Goal (t o : Expr) : Expr :=
     let rest := eliminate t e₂
     mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest)
   | _ => o
+
+def pullIndex (index : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
+  withMainContext do
+    let l := getLength type
+    let arr : List Term :=
+      if index = 0 then []
+      else if l = index + 1 then tacticsLastIndex index
+           else tacticsRegular index
+    let newGoal := pullGoal index type
+    let mvarId ← getMainGoal
+    Meta.withMVarContext mvarId do
+      let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
+      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
+      replaceMainGoal [p.mvarId!, mvarIdNew]
+      for s in arr do
+        evalTactic (← `(tactic| apply $s))
+      Tactic.closeMainGoal hyp
 
 -- insert pivot in the first position of the or-chain
 -- representede by hyp
@@ -61,20 +92,7 @@ def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       match index' with
       | some i => pure i
       | none   => throwError "term not found"
-    let l := getLength type
-    let arr : List Term :=
-      if index = 0 then []
-      else if l = index + 1 then tacticsLastIndex index
-           else tacticsRegular index
-    let new_term := pullGoal pivot type
-    let mvarId ← getMainGoal
-    Meta.withMVarContext mvarId do
-      let p ← Meta.mkFreshExprMVar new_term MetavarKind.syntheticOpaque name
-      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name new_term p
-      replaceMainGoal [p.mvarId!, mvarIdNew]
-      for s in arr do
-        evalTactic (← `(tactic| apply $s))
-      Tactic.closeMainGoal hyp
+    pullIndex index hyp type name
 
 -- insert pivot in the second position of the or-chain
 -- representede by hyp
@@ -96,6 +114,7 @@ def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
         let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
         replaceMainGoal [p.mvarId!, mvarIdNew]
         Tactic.closeMainGoal h₃
+        evalTactic (← `(tactic| clear $fident))
  
 syntax (name := pull2) "pull2" term "," term "," ident : tactic
 
@@ -105,12 +124,12 @@ syntax (name := pull2) "pull2" term "," term "," ident : tactic
   let name := stx[5].getId
   pull2Core pivot hyp name     
 
-example : A ∨ B ∨ C ∨ D ∨ E → B ∨ A ∨ C ∨ D ∨ E := by
-  intro h
-  pull2 D, h, ble
+/- example : C ∨ B ∨ C ∨ D ∨ E → C ∨ C ∨ B ∨ D ∨ E := by -/
+/-   intro h -/
 
+/-   pull2 C, h, ble -/
 
-  exact orAssocConv (congOrRight orComm (orAssocDir h))
+/-   exact ble -/
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
@@ -152,7 +171,6 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
     let reordSecondHyp ← inferType (ctx.findFromUserName? fident2.getId).get!.toExpr
     let len₁ := getLength reordFirstHyp
     let len₂ := getLength reordSecondHyp
-
     let lenGoal ← getLength <$> getMainTarget
 
     -- TODO: understand why this if's is necessary

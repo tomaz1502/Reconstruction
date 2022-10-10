@@ -80,9 +80,7 @@ theorem orImplies₃ : ∀ {p q : Prop}, p ∨ q → ¬ p → q := by
 theorem scope : ∀ {p q : Prop}, (p → q) → ¬ p ∨ q :=
   by intros p q h
      exact match em p with
-     | Or.inl pp => match em q with
-                    | Or.inl pq => Or.inr pq
-                    | Or.inr npq => False.elim (npq (h pp))
+     | Or.inl pp =>  Or.inr (h pp)
      | Or.inr npp => Or.inl npp
  
 def impliesElim : ∀ {p q : Prop}, (p → q) → ¬ p ∨ q := scope

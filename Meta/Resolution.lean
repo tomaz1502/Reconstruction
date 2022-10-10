@@ -92,9 +92,8 @@ def pullIndex (index : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
 
 -- insert pivot in the first position of the or-chain
 -- represented by hyp
-def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
+def pullCore (pivot hyp type : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
-    let type ← Meta.inferType hyp
     let index' := getIndex pivot type
     let index ←
       match index' with
@@ -107,8 +106,9 @@ syntax (name := pull) "pull" term "," term "," ident : tactic
 @[tactic pull] def evalPull : Tactic := fun stx => withMainContext do
   let pivot ← elabTerm stx[1] none
   let hyp ← elabTerm stx[3] none
+  let type ← inferType hyp
   let name := stx[5].getId
-  pullCore pivot hyp name     
+  pullCore pivot hyp type name
 
 example : A ∨ B ∨ C ∨ D → True := by
   intro h
@@ -145,8 +145,10 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let notPivotExpr ← elabTerm notPivot none
   let firstHypExpr ← elabTerm firstHyp none
   let secondHypExpr ← elabTerm secondHyp none
-  pullCore pivotExpr    firstHypExpr  fname1
-  pullCore notPivotExpr secondHypExpr fname2
+  let firstHypType ← inferType firstHypExpr
+  let secondHypType ← inferType secondHypExpr
+  pullCore pivotExpr    firstHypExpr  firstHypType  fname1
+  pullCore notPivotExpr secondHypExpr secondHypType fname2
   -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
   -- thats why we have another `withMainContext` here
   withMainContext do

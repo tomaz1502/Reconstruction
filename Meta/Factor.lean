@@ -22,10 +22,11 @@ def go (hyp type e : Expr) (li : List Expr) (name : Name) : TacticM Name := do
              | true  =>
                withMainContext do
                  let fname ← mkFreshId
-                 logInfo m!"{h} -- {hyp}"
-                 let tt ← inferType hyp
-                 logInfo m!"{tt}"
-                 pullCore h hyp fname
+                 try
+                   pullCore h hyp type fname
+                 catch e => do
+                   throwError e.toMessageData
+                 logInfo m!"HERE: {h} -- {hyp} -- {type}"
                  withMainContext do
                    let fname2 ← mkFreshId
                    let ctx ← getLCtx
@@ -44,11 +45,16 @@ def go (hyp type e : Expr) (li : List Expr) (name : Name) : TacticM Name := do
                        let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque fname3
                        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId fname3 newGoal p
                        replaceMainGoal [p.mvarId!, mvarIdNew]
-                       let dupFreeHyp := (mkApp (mkConst `dupOr) pull2Hyp)
-                       Tactic.closeMainGoal dupFreeHyp
-                       evalTactic (← `(tactic| clear $(mkIdent fname)))
-                       evalTactic (← `(tactic| clear $(mkIdent fname2)))
-                       go dupFreeHyp newGoal e t fname3
+                       if getLength newGoal > 2 then
+                         evalTactic (← `(tactic| exact dupOr $(mkIdent fname2)))
+                       else
+                         evalTactic (← `(tactic| exact dupOr₂ $(mkIdent fname2)))
+                       withMainContext do
+                         let ctx3 ← getLCtx
+                         let dupFreeHyp := (ctx3.findFromUserName? (mkIdent fname3).getId).get!.toExpr
+                         evalTactic (← `(tactic| clear $(mkIdent fname)))
+                         evalTactic (← `(tactic| clear $(mkIdent fname2)))
+                         go dupFreeHyp newGoal e t fname3
 
 
 def factorLoop (hyp type : Expr) (li : List Expr) (name : Name) : TacticM Name :=
@@ -104,10 +110,4 @@ example : A ∨ A ∨ A → True :=
   by intro h
      factor h, bla
 
-     
-
-     exact True.intro
-
-
-
-
+     admit

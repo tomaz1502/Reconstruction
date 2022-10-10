@@ -244,3 +244,8 @@ theorem dupOr {P Q : Prop} : P ∨ P ∨ Q → P ∨ Q := λ h =>
   | Or.inr (Or.inl p) => Or.inl p
   | Or.inr (Or.inr q) => Or.inr q
 
+theorem dupOr₂ {P : Prop} : P ∨ P → P := λ h =>
+  match h with
+  | Or.inl p => p
+  | Or.inr p => p
+

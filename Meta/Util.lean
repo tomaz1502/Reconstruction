@@ -2,6 +2,15 @@ import Lean
 
 open Lean.Expr Lean
 
+def getOccs' (i : Nat) (e o : Expr) : List Nat :=
+  match o with
+  | app (app (const `Or ..) e1) e2 =>
+    let rest := getOccs' (i + 1) e e2
+    if e1 == e then i :: rest else rest
+  | e' => if e == e' then [i] else []
+
+def getOccs : Expr → Expr → List Nat := getOccs' 0
+
 def andN : List Prop → Prop := λ l =>
   match l with
   | [] => True
@@ -57,6 +66,12 @@ def getLength (o : Expr) : Nat :=
 def getNatLit? : Expr → Option Nat
 | app (app _ (lit (Literal.natVal x))) _ => some x
 | _ => none
+
+open Lean.Elab.Tactic Lean.Meta in
+def getExprInContext (name : Name) : TacticM Expr :=
+  withMainContext do
+    let ctx ← getLCtx
+    inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr
 
 open Lean.Elab.Tactic Lean.Meta in
 def printGoal : TacticM Unit := do

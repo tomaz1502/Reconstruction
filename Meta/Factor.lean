@@ -3,52 +3,111 @@ import Meta.Resolution
 import Lean
 
 open Lean
+open Lean.Elab
 open Lean.Elab.Tactic
 open Lean.Expr
 open Lean.Meta
-open Lean.Elab
 
 def excludeFirst : Expr → Expr :=
   createOrChain ∘ List.drop 1 ∘ collectPropsInOrChain
 
-def go (hyp e : Expr) (li : List Expr) (name : Name) : TacticM Name :=
+def eraseDups : Expr → Expr :=
+  createOrChain ∘ List.eraseDups ∘ collectPropsInOrChain
+
+def go (hyp type e : Expr) (li : List Expr) (name : Name) : TacticM Name := do
+   match li with
+   | []   => return name
+   | h::t => match e == h with
+             | false => go hyp type e t name
+             | true  =>
+               withMainContext do
+                 let fname ← mkFreshId
+                 logInfo m!"{h} -- {hyp}"
+                 let tt ← inferType hyp
+                 logInfo m!"{tt}"
+                 pullCore h hyp fname
+                 withMainContext do
+                   let fname2 ← mkFreshId
+                   let ctx ← getLCtx
+                   let pullHyp := (ctx.findFromUserName? (mkIdent fname).getId).get!.toExpr
+                   let pullHypType ← inferType pullHyp
+                   -- jump the first occurence (the one pulled by pullCore)
+                   let index := (getOccs h type).get! 1
+                   pullIndex index pullHyp pullHypType fname2
+                   withMainContext do
+                     let ctx2 ← getLCtx
+                     let pull2Hyp ← inferType (ctx2.findFromUserName? (mkIdent fname2).getId).get!.toExpr
+                     let fname3 ← mkFreshId
+                     let newGoal := excludeFirst pull2Hyp
+                     let mvarId ← getMainGoal
+                     Meta.withMVarContext mvarId do
+                       let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque fname3
+                       let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId fname3 newGoal p
+                       replaceMainGoal [p.mvarId!, mvarIdNew]
+                       let dupFreeHyp := (mkApp (mkConst `dupOr) pull2Hyp)
+                       Tactic.closeMainGoal dupFreeHyp
+                       evalTactic (← `(tactic| clear $(mkIdent fname)))
+                       evalTactic (← `(tactic| clear $(mkIdent fname2)))
+                       go dupFreeHyp newGoal e t fname3
+
+
+def factorLoop (hyp type : Expr) (li : List Expr) (name : Name) : TacticM Name :=
   match li with
-  | []   => return name
-  | h::t => match e == h with
-            | true  =>
-              withMainContext do
-                let fname ← mkFreshId
-                pullCore h hyp fname
-                withMainContext do
-                  let fname2 ← mkFreshId
-                  let ctx ← getLCtx
-                  let pullHyp ← inferType (ctx.findFromUserName? (mkIdent fname).getId).get!.toExpr
-                  -- jump the first occurence (the one pulled by pullCore)
-                  let index := (getOccs h hyp).get! 1
-                  pull2Index index pullHyp fname2
-                  withMainContext do
-                    let ctx2 ← getLCtx
-                    let pull2Hyp ← inferType (ctx2.findFromUserName? (mkIdent fname2).getId).get!.toExpr
-                    let fname3 ← mkFreshId
-                    let newGoal := excludeFirst pull2Hyp                   
-                    let mvarId ← getMainGoal
-                    Meta.withMVarContext mvarId do
-                      let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque fname3
-                      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId fname3 newGoal p
-                      replaceMainGoal [p.mvarId!, mvarIdNew]
-                      Tactic.closeMainGoal (mkApp (mkConst `dupOr) pull2Hyp)
-                      withMainContext do
-                        let ctx3 ← getLCtx
-                        let dupFreeHyp ← inferType (ctx3.findFromUserName? (mkIdent fname3).getId).get!.toExpr
-                        go dupFreeHyp e t fname3
-            | false => go hyp e t name
+  | []    => return name
+  | e::es =>
+    withMainContext do
+      let fname ← mkFreshId
+      let newName ← go hyp type e es fname
+      withMainContext do
+        let ctx ← getLCtx
+        match (ctx.findFromUserName? (mkIdent newName).getId) with
+        | none => factorLoop hyp type es name
+        | some newHyp' =>
+          let newHyp := newHyp'.toExpr
+          let newType ← inferType newHyp
+          if Option.isSome (ctx.findFromUserName? name)
+          then
+            evalTactic (← `(tactic| clear $(mkIdent name)))
+          else pure ()
+          factorLoop newHyp newType es newName
 
-def factorCore (e : Expr) (name : Name) : TacticM Unit :=
+def factorCore (e type : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
-    return ()
+    let li := collectPropsInOrChain type
+    let fname ← mkFreshId
+    let newName ← factorLoop e type li fname
+    let newExpr ←
+      withMainContext do
+        let ctx ← getLCtx
+        match ctx.findFromUserName? (mkIdent newName).getId with
+        | none      => pure e
+        | some hyp' => pure $ hyp'.toExpr
+    let newGoal := eraseDups type
+    let mvarId ← getMainGoal
+    Meta.withMVarContext mvarId do
+      let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
+      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
+      replaceMainGoal [p.mvarId!, mvarIdNew]
+      Tactic.closeMainGoal newExpr
+      evalTactic (← `(tactic| clear $(mkIdent newName)))
 
-syntax (name := factor) "factor" term "," term : tactic
+syntax (name := factor) "factor" term "," ident : tactic
 
 @[tactic factor] def evalFactor : Tactic := fun stx =>
   withMainContext do
-    sorry
+    let e ← elabTerm stx[1] none
+    let type ← inferType e
+    let name := Syntax.getId stx[3]
+    factorCore e type name
+
+example : A ∨ A ∨ A → True :=
+  by intro h
+     factor h, bla
+
+     
+
+     exact True.intro
+
+
+
+

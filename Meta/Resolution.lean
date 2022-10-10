@@ -69,7 +69,7 @@ def pull2Goal (i : Nat) (o : Expr) : Expr :=
 /- def pull2Goal (t o : Expr) : Expr := -/
 /-   match o with -/
 /-   | app (app (const `Or ..) e₁) e₂ => -/ 
-/-     let rest := eliminate t e₂ -/
+                                /-     let rest := eliminate t e₂ -/
 /-     mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest) -/
 /-   | _ => o -/
 
@@ -91,7 +91,7 @@ def pullIndex (index : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
       Tactic.closeMainGoal hyp
 
 -- insert pivot in the first position of the or-chain
--- representede by hyp
+-- represented by hyp
 def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
   withMainContext do
     let type ← Meta.inferType hyp
@@ -102,50 +102,20 @@ def pullCore (pivot hyp : Expr) (name : Name) : TacticM Unit :=
       | none   => throwError "term not found"
     pullIndex index hyp type name
 
-def pull2Index (i : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
-  withMainContext do
-    let fname ← mkFreshId
-    pullIndex i hyp type fname
-    withMainContext do
-      let ctx ← getLCtx
-      let fident := mkIdent fname
-      let pullHyp ← inferType (ctx.findFromUserName? fident.getId).get!.toExpr
-      let h₁ := mkApp (mkConst `orAssocDir) pullHyp
-      let h₂ := mkApp (mkApp (mkConst `congOrRight) (mkConst `orComm)) h₁
-      let h₃ := mkApp (mkConst `orAssocConv) h₂
-      let newGoal := pull2Goal i type
-      let mvarId ← getMainGoal
-      Meta.withMVarContext mvarId do
-        let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
-        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
-        replaceMainGoal [p.mvarId!, mvarIdNew]
-        Tactic.closeMainGoal h₃
-        evalTactic (← `(tactic| clear $fident))
+syntax (name := pull) "pull" term "," term "," ident : tactic
 
--- insert pivot in the second position of the or-chain
--- representede by hyp
-def pull2Core (pivot hyp : Expr) (name : Name) : TacticM Unit :=
-  withMainContext do
-    let type ← Meta.inferType hyp
-    let index' := getIndex pivot type
-    let index ←
-      match index' with
-      | some i => pure i
-      | none   => throwError "term not found"
-    pull2Index index hyp type name
- 
-syntax (name := pull2) "pull2" term "," term "," ident : tactic
-
-@[tactic pull2] def evalPull2 : Tactic := fun stx => withMainContext do
+@[tactic pull] def evalPull : Tactic := fun stx => withMainContext do
   let pivot ← elabTerm stx[1] none
   let hyp ← elabTerm stx[3] none
   let name := stx[5].getId
-  pull2Core pivot hyp name     
+  pullCore pivot hyp name     
 
-/- example : C ∨ B ∨ C ∨ D ∨ E → C ∨ C ∨ B ∨ D ∨ E := by -/
-/-   intro h -/
-/-   pull2 C, h, ble -/
-/-   exact ble -/
+example : A ∨ B ∨ C ∨ D → True := by
+  intro h
+  pull C, h, ble
+  pull D, ble, bli
+
+  admit
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂

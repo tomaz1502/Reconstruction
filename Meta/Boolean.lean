@@ -231,7 +231,7 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
       let hyp2 := (ctx.findFromUserName? fname2.getId).get!.toExpr
       Tactic.closeMainGoal $ mkApp (mkApp (mkConst `deMorgan₂) li) hyp2
 
-theorem eqResolve {P Q : Prop} : P → P = Q → Q := by
+theorem eqResolve {P Q : Prop} : P → (P ↔ Q) → Q := by
   intros h₁ h₂
   rewrite [← h₂]
   exact h₁

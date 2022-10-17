@@ -108,6 +108,6 @@ syntax (name := factor) "factor" term "," ident : tactic
 
 example : A ∨ A ∨ A → True :=
   by intro h
-     factor h, bla
+     /- factor h, bla -/
 
      admit

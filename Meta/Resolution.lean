@@ -35,87 +35,125 @@ def getIndex (t o : Expr) : Option Nat :=
   | e => if e == t then some 0
          else none
 
-def tacticsLastIndex (index : Nat) : List Term :=
-  (mkIdent `orComm) :: reverse (getCongAssoc (index - 1) `orAssocDir)
+def applyList (l: List Term) (res: Term) : TacticM Term :=
+  match l with
+  | [] => return res
+  | t::ts =>
+    withMainContext do
+      let res' := Syntax.mkApp t #[res]
+      let fname ← mkIdent <$> mkFreshId
+      evalTactic (← `(tactic| have $fname := $res'))
+      applyList ts fname
 
-def tacticsRegular (index : Nat) : List Term :=
-  let tactics₁ := getCongAssoc index `orAssocConv
-  let tactics₂ := [ Syntax.mkApp (mkIdent `congOrRight) #[mkIdent `orComm] ]
-  let tactics₃ := reverse $
-    map (λ e => Syntax.mkApp (mkIdent `congOrRight) #[e])
-      (getCongAssoc (index - 1) `orAssocDir)
-  let tactics₄ := reverse (getCongAssoc index `orAssocDir)
-  tactics₁ ++ tactics₂ ++ tactics₃ ++ tactics₄
+def fold (l : List Term) (nm : Ident) : Syntax :=
+  match l with
+  | [] => nm
+  | t::ts =>
+    let rest := fold ts nm
+    let rest := ⟨rest⟩
+    Syntax.mkApp t #[rest]
 
-def pullGoal (i : Nat) (o : Expr) : Expr :=
-  match o with
-  | app (app (const `Or ..) _) _ =>
-    let rest    := eliminateIndex i o
-    let ithExpr := (collectPropsInOrChain o).get! i
-    mkApp (mkApp (mkConst `Or) ithExpr) rest
-  -- if `o` is a single expression then we're assuming
-  -- it is equals to `t` useful for corner cases (resolution
-  -- that results in empty clause)
-  | e => e
+def go (tactics : List Term) (i : Nat) (nm : Ident) (last : Bool) : TacticM Syntax :=
+  match i with
+  | 0 =>
+    withMainContext do
+      if last then
+        let innerProof := fold tactics nm
+        let innerProof: Term := ⟨innerProof⟩
+        `($innerProof)
+      else
+        let fname := mkIdent (Name.mkSimple "w")
+        let innerProof := fold tactics fname
+        let innerProof: Term := ⟨innerProof⟩
+        `(congOrRight (fun $fname => $innerProof) $nm)
+  | (i' + 1) =>
+    withMainContext do
+      let nm' := Name.mkSimple "w"
+      let nm' := mkIdent nm'
+      let r ← go tactics i' nm' last
+      let r: Term := ⟨r⟩
+      `(congOrLeft (fun $nm' => $r) $nm)
 
-def pull2Goal (i : Nat) (o : Expr) : Expr :=
-  match o with
-  | app (app (const `Or ..) e₁) _ =>
-    let rest    := eliminateIndex i o
-    let ithExpr := (collectPropsInOrChain o).get! i
-    mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) ithExpr) rest)
-  | _ => o
+-- pull j-th term in the orchain to i-th position (1-based)
+-- TODO: clear intermediate steps
+def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
+  if i == j then do
+    let hyp: Term := ⟨hyp⟩
+    evalTactic (← `(tactic| have $(mkIdent name) := $hyp))
+  else withMainContext do
+    let last := getLength type == j
 
-/- def pull2Goal (t o : Expr) : Expr := -/
-/-   match o with -/
-/-   | app (app (const `Or ..) e₁) e₂ => -/ 
-                                /-     let rest := eliminate t e₂ -/
-/-     mkApp (mkApp (mkConst `Or) e₁) (mkApp (mkApp (mkConst `Or) t) rest) -/
-/-   | _ => o -/
+    let step₁: Ident ← 
+      if last then pure ⟨hyp⟩
+      else do
+        let v := List.take (j - i) $ getCongAssoc (j - 1) `orAssocDir
+        let res: Term := ⟨hyp⟩
+        let step₁: Term ← applyList v res
+        let step₁: Ident := ⟨step₁⟩ 
+        pure step₁ 
 
-def pullIndex (index : Nat) (hyp type : Expr) (name : Name) : TacticM Unit :=
-  withMainContext do
-    let l := getLength type
-    let arr : List Term :=
-      if index = 0 then []
-      else if l = index + 1 then tacticsLastIndex index
-           else tacticsRegular index
-    let newGoal := pullGoal index type
-    let mvarId ← getMainGoal
-    Meta.withMVarContext mvarId do
-      let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
-      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
-      replaceMainGoal [p.mvarId!, mvarIdNew]
-      for s in arr do
-        evalTactic (← `(tactic| apply $s))
-      Tactic.closeMainGoal hyp
+    let step₂: Ident ←
+      if last then do
+        let tactics := List.take (j - 1 - i) $ getCongAssoc (j - 2) `orAssocDir
+        let step₂: Term ← applyList tactics step₁
+        let step₂: Ident := ⟨step₂⟩
+        pure step₂
+      else do
+        let tactics₂ := List.reverse $ getCongAssoc (j - i - 1) `orAssocDir
+        let wrappedTactics₂: Syntax ← go tactics₂ (i - 1) step₁ last
+        let wrappedTactics₂: Term := ⟨wrappedTactics₂⟩
+        let fname₂ ← mkIdent <$> mkFreshId
+        evalTactic (← `(tactic| have $fname₂ := $wrappedTactics₂))
+        pure fname₂
+    
+    let orComm: Term := ⟨mkIdent `orComm⟩
+    let wrappedTactics₃ ← go [orComm] (i - 1) step₂ last
+    let wrappedTactics₃ := ⟨wrappedTactics₃⟩
+    let step₃ ← mkIdent <$> mkFreshId
+    evalTactic (← `(tactic| have $step₃ := $wrappedTactics₃))
+
+    let step₄: Ident ←
+      if last then do pure step₃ 
+      else do
+        let u := List.reverse $ List.take (j - i) $ getCongAssoc (j - 1) `orAssocConv
+        let step₄: Term ← applyList u step₃
+        let step₄: Ident := ⟨step₄⟩
+        pure step₄
+
+    evalTactic (← `(tactic| have $(mkIdent name) := $step₄))
+
+
+syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
+
+@[tactic pull2] def evalPull2 : Tactic := fun stx => withMainContext do
+  let i ← stxToNat ⟨stx[1]⟩ 
+  let j ← stxToNat ⟨stx[3]⟩
+  let nm := stx[7].getId
+  let e ← elabTerm stx[5] none
+  let t ← inferType e
+  pullIndex2 i j stx[5] t nm
+
+example : A → True := by
+  intro h
+  pull2 1, 1, h, bla
+  exact True.intro
+
+
+def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
+  pullIndex2 1 index hypS type name
 
 -- insert pivot in the first position of the or-chain
 -- represented by hyp
-def pullCore (pivot hyp type : Expr) (name : Name) : TacticM Unit :=
+def pullCore (pivot type : Expr) (hypS : Syntax) (name : Name) : TacticM Unit :=
   withMainContext do
+    logInfo type
+    logInfo pivot
     let index' := getIndex pivot type
     let index ←
       match index' with
       | some i => pure i
       | none   => throwError "term not found"
-    pullIndex index hyp type name
-
-syntax (name := pull) "pull" term "," term "," ident : tactic
-
-@[tactic pull] def evalPull : Tactic := fun stx => withMainContext do
-  let pivot ← elabTerm stx[1] none
-  let hyp ← elabTerm stx[3] none
-  let type ← inferType hyp
-  let name := stx[5].getId
-  pullCore pivot hyp type name
-
-example : A ∨ B ∨ C ∨ D → True := by
-  intro h
-  pull C, h, ble
-  pull D, ble, bli
-
-  admit
+    pullIndex (index + 1) hypS type name
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
@@ -143,66 +181,54 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
   let pivotExpr ← elabTerm pivotTerm none
   let notPivotExpr ← elabTerm notPivot none
-  let firstHypExpr ← elabTerm firstHyp none
-  let secondHypExpr ← elabTerm secondHyp none
-  let firstHypType ← inferType firstHypExpr
-  let secondHypType ← inferType secondHypExpr
-  pullCore pivotExpr    firstHypExpr  firstHypType  fname1
-  pullCore notPivotExpr secondHypExpr secondHypType fname2
-  -- I dont know why but the context doesn't automatically refresh to include the new hypothesis
-  -- thats why we have another `withMainContext` here
-  withMainContext do
-    let ctx ← getLCtx
-    let fident1 := mkIdent fname1
-    let fident2 := mkIdent fname2
-    let reordFirstHyp ← inferType (ctx.findFromUserName? fident1.getId).get!.toExpr
-    let reordSecondHyp ← inferType (ctx.findFromUserName? fident2.getId).get!.toExpr
-    let len₁ := getLength reordFirstHyp
-    let len₂ := getLength reordSecondHyp
-    let lenGoal ← getLength <$> getMainTarget
+  let firstHypType ← inferType (← elabTerm firstHyp none)
+  let secondHypType ← inferType (← elabTerm secondHyp none)
 
-    -- TODO: understand why this if's is necessary
-    if lenGoal > 2 then
-      for s in getCongAssoc (len₁ - 2) `orAssocConv do
-        evalTactic (← `(tactic| apply $s))
-        logInfo m!"....apply {s}"
-        printGoal
+  let lenGoal ← getLength <$> getMainTarget
+  pullCore pivotExpr    firstHypType  firstHyp  fname1
+  pullCore notPivotExpr secondHypType secondHyp fname2
 
-    if len₁ > 1 then
-      if len₂ > 1 then
-        /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm $fident1 $fident2))
-        logInfo m!"..close goal with resolution_thm"
-      else
-        /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₃) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₃ $fident1 $fident2))
-        logInfo m!"..close goal with resolution_thm₃"
+  let fident1 := mkIdent fname1
+  let fident2 := mkIdent fname2
+  let len₁ := getLength firstHypType
+  let len₂ := getLength secondHypType
+
+  /- logInfo m!"{lenGoal}" -/
+  /- logInfo (← getMainTarget) -/
+  if lenGoal > 2 then
+    for s in getCongAssoc (len₁ - 2) `orAssocConv do
+      evalTactic (← `(tactic| apply $s))
+      logInfo m!"....apply {s}"
+      printGoal
+
+  if len₁ > 1 then
+    if len₂ > 1 then
+      evalTactic (← `(tactic| exact resolution_thm $fident1 $fident2))
+      logInfo m!"..close goal with resolution_thm"
     else
-      if len₂ > 1 then
-        /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₂) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₂ $fident1 $fident2))
-        logInfo m!"..close goal with resolution_thm₂"
-      else
-        /- Tactic.closeMainGoal (mkApp (mkApp (mkConst `resolution_thm₄) bla) ble) -/
-        evalTactic (← `(tactic| exact resolution_thm₄ $fident1 $fident2))
-        logInfo m!"..close goal with resolution_thm₄"
-  
+      evalTactic (← `(tactic| exact resolution_thm₃ $fident1 $fident2))
+      logInfo m!"..close goal with resolution_thm₃"
+  else
+    if len₂ > 1 then
+      evalTactic (← `(tactic| exact resolution_thm₂ $fident1 $fident2))
+      logInfo m!"..close goal with resolution_thm₂"
+    else
+      evalTactic (← `(tactic| exact resolution_thm₄ $fident1 $fident2))
+      logInfo m!"..close goal with resolution_thm₄"
 
 syntax (name := resolution_1) "resolution_1" ident "," ident "," term : tactic
-
 @[tactic resolution_1] def evalResolution_1 : Tactic :=
   fun stx => withMainContext do
-    let firstHyp : Ident := ⟨ stx[1] ⟩
-    let secondHyp : Ident := ⟨ stx[3] ⟩
-    let pivotTerm : Term := ⟨ stx[5] ⟩
+    let firstHyp : Ident := ⟨stx[1]⟩
+    let secondHyp : Ident := ⟨stx[3]⟩
+    let pivotTerm : Term := ⟨stx[5]⟩
     resolutionCore firstHyp secondHyp pivotTerm
 
 syntax (name := resolution_2) "resolution_2" ident "," ident "," term : tactic
-
 @[tactic resolution_2] def evalResolution_2 : Tactic :=
   fun stx => withMainContext do
-    let firstHyp : Ident := ⟨ stx[1] ⟩
-    let secondHyp : Ident := ⟨ stx[3] ⟩
-    let pivotTerm : Term := ⟨ stx[5] ⟩
+    let firstHyp : Ident := ⟨stx[1]⟩
+    let secondHyp : Ident := ⟨stx[3]⟩
+    let pivotTerm : Term := ⟨stx[5]⟩
     resolutionCore secondHyp firstHyp pivotTerm
 

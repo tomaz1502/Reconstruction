@@ -49,6 +49,15 @@ def createOrChain : List Expr → Expr
 | [h] => h
 | h::t => app (app (mkConst `Or) h) $ createOrChain t
 
+def getCongAssoc2' : Nat → Name → Expr
+| 0, n => mkConst n
+| i + 1, n => mkApp (mkConst `congOrLeft) $ getCongAssoc2' i n
+
+def getCongAssoc2 : Nat → Name → List Expr
+| 0, _ => []
+| 1, n => [getCongAssoc2' 0 n]
+| i + 2, n => (getCongAssoc2' (i + 1) n) :: getCongAssoc2 (i + 1) n
+
 def getCongAssoc' : Nat → Name → Term
 | 0,     n => mkIdent n
 | i + 1, n => Syntax.mkApp (mkIdent `congOrLeft) #[getCongAssoc' i n]
@@ -67,6 +76,15 @@ def getNatLit? : Expr → Option Nat
 | app (app _ (lit (Literal.natVal x))) _ => some x
 | _ => none
 
+open Lean.Elab.Tactic in
+def stxToNat (h : TSyntax `term) : TacticM Nat := do
+  let expr ← elabTerm h.raw none
+  match getNatLit? expr with
+  | some i => pure i
+  | none   => throwError "bla"
+
+#check LocalDecl
+
 open Lean.Elab.Tactic Lean.Meta in
 def getExprInContext (name : Name) : TacticM Expr :=
   withMainContext do
@@ -78,3 +96,4 @@ def printGoal : TacticM Unit := do
   let currGoal ← getMainGoal
   let currGoalType ← getMVarType currGoal
   logInfo m!"......new goal: {← instantiateMVars currGoalType}"
+

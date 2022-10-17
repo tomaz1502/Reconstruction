@@ -88,8 +88,7 @@ def impliesElim : ∀ {p q : Prop}, (p → q) → ¬ p ∨ q := scope
 theorem deMorganSmall : ∀ {p q : Prop}, ¬ (p ∨ q) → ¬ p ∧ ¬ q :=
   by intros p q h
      exact match em p, em q with
-     | Or.inl pp,  Or.inl _   => False.elim (h (Or.inl pp))
-     | Or.inl pp,  Or.inr _   => False.elim (h (Or.inl pp))
+     | Or.inl pp,  _          => False.elim (h (Or.inl pp))
      | Or.inr _,   Or.inl pq  => False.elim (h (Or.inr pq))
      | Or.inr npp, Or.inr npq => And.intro npp npq
  
@@ -148,14 +147,6 @@ theorem cnfAndNeg : ∀ (l : List Prop), andN l ∨ orN (notList l) :=
      intro h
      exact deMorgan h
  
-theorem lessThanOne : ∀ {i : Nat}, i < 1 → i = 0 := by
-  intros i h
-  match i with
-  | zero => exact rfl
-  | succ i' =>
-    cases h with
-    | step h' => cases h'
-
 def getProp : List Prop → Nat → Prop
   | [], _ => True
   | a::_, 0 => a

@@ -33,6 +33,8 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
         )
       ))
     have lean_s2  : a = b ∧ c = d → f a c = f b d := by liftOrNToImp lean_s1, 2
+    -- ¬a = b ∨ ¬c = d ∨ f a c = f b d
+    -- ¬a = b ∨ ¬c = d ∨ f a c = f b d
     have lean_s3  : (¬ ((a = b) ∧ (c = d))) ∨ (f a c = f b d) := impliesElim lean_s2
     have lean_s5  : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by resolution_1 lean_s0, lean_s3, ((a = b) ∧ (c = d))
     have lean_s6  : f a c = f b d ∨ ¬ (a = b) ∨ ¬ (c = d) := by permutateOr lean_s5, [2, 0, 1]

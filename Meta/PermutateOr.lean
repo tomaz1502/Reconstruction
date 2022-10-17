@@ -11,12 +11,6 @@ syntax (name := permutateOr) "permutateOr" term "," ("[" term,* "]")? : tactic
 def parsePermuteOr : Syntax → TacticM (List Nat)
   | `(tactic| permutateOr $_, [ $[$hs],* ]) => hs.toList.mapM stxToNat
   | _                                      => throwError "ble"
-where
-  stxToNat (h : TSyntax `term) : TacticM Nat := do
-    let expr ← elabTerm h.raw none
-    match getNatLit? expr with
-    | some i => pure i
-    | none   => throwError "bla"
 
 def getIthExpr : Nat → Expr → Option Expr
   | Nat.zero, app (app (const `Or ..) t₁) _ => some t₁
@@ -29,23 +23,23 @@ def getIthExpr : Nat → Expr → Option Expr
     let hyp ← elabTerm stx[1] none
     let type ← Meta.inferType hyp
     let hs ← parsePermuteOr stx
-    let conclusion ← go hs.reverse type hyp
+    let conclusion ← go hs.reverse type hyp stx[1]
     Tactic.closeMainGoal conclusion
-where go : List Nat → Expr → Expr → TacticM Expr
-       | [], _, hyp => return hyp
-       | (i::is), type, hyp => do
+where go : List Nat → Expr → Expr → Syntax → TacticM Expr
+       | [], _, hyp, _ => return hyp
+       | (i::is), type, hyp, stx => do
          let fname ← mkIdent <$> mkFreshId
          let fnameId := fname.getId
          let ithExpr ←
            match getIthExpr i type with
            | some e => pure e
            | none   => throwError "invalid permutation"
-         logInfo m!"{ithExpr}"
-         pullCore ithExpr hyp fnameId
+         let type ← Meta.inferType hyp
+         pullCore ithExpr type stx fnameId
          withMainContext do
            let ctx ← getLCtx
            let hyp' := (ctx.findFromUserName? fnameId).get!.toExpr
-           go is type hyp'
+           go is type hyp' stx
 
 
 example : A ∨ B ∨ C ∨ D ∨ E → True := by

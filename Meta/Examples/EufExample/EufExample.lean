@@ -1,15 +1,15 @@
 import Meta.Boolean
 import Meta.Resolution
 import Meta.PermutateOr
- 
+
 universe u
- 
+
 variable {U : Type u}
- 
+
 variable {f : U → U → U}
- 
+
 variable {p₁ p₂ p₃ : Prop}
- 
+
 variable {a b c d : U}
 
 theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ p₃) → (¬ p₃) ∨ (¬ (f a c = f b d)) → False :=
@@ -36,7 +36,7 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
     -- ¬a = b ∨ ¬c = d ∨ f a c = f b d
     -- ¬a = b ∨ ¬c = d ∨ f a c = f b d
     have lean_s3  : (¬ ((a = b) ∧ (c = d))) ∨ (f a c = f b d) := impliesElim lean_s2
-    have lean_s5  : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by resolution_1 lean_s0, lean_s3, ((a = b) ∧ (c = d))
+    have lean_s5  : ¬ (a = b) ∨ ¬ (c = d) ∨ f a c = f b d := by R1 lean_s0, lean_s3, ((a = b) ∧ (c = d))
     have lean_s6  : f a c = f b d ∨ ¬ (a = b) ∨ ¬ (c = d) := by permutateOr lean_s5, [2, 0, 1]
     have lean_s7  := lean_a4
     have lean_s8  : (¬ (p₂ ∧ p₃)) ∨ p₃ := @cnfAndPos ([p₂, p₃]) 1
@@ -45,11 +45,11 @@ theorem euf : (a = b) → (c = d) → p₁ ∧ True → (¬ p₁) ∨ (p₂ ∧ 
     have lean_s11 : (p₁ ∧ True) → p₁ := And.left
     have lean_s12 : p₁ := lean_s11 lean_a2
     have lean_s13 := lean_s12
-    have lean_s14 : p₂ ∧ p₃ := by resolution_2 lean_s10, lean_s13, p₁
-    have lean_s15 : p₃ := by resolution_2 lean_s9, lean_s14, (p₂ ∧ p₃)
-    have lean_s16 : ¬ (f a c = f b d) := by resolution_2 lean_s7, lean_s15, p₃
-    have lean_s17 : ¬ (a = b) ∨ ¬ (c = d) := by resolution_1 lean_s6, lean_s16, (f a c = f b d)
+    have lean_s14 : p₂ ∧ p₃ := by R2 lean_s10, lean_s13, p₁
+    have lean_s15 : p₃ := by R2 lean_s9, lean_s14, (p₂ ∧ p₃)
+    have lean_s16 : ¬ (f a c = f b d) := by R2 lean_s7, lean_s15, p₃
+    have lean_s17 : ¬ (a = b) ∨ ¬ (c = d) := by R1 lean_s6, lean_s16, (f a c = f b d)
     have lean_s18 := lean_a1
-    have lean_s19 : ¬ (a = b) := by resolution_2 lean_s17, lean_s18, (c = d)
+    have lean_s19 : ¬ (a = b) := by R2 lean_s17, lean_s18, (c = d)
     have lean_s20 := lean_a0
-    show False from by resolution_2 lean_s19, lean_s20, (a = b)
+    show False from by R2 lean_s19, lean_s20, (a = b)

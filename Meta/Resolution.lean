@@ -216,7 +216,7 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
       evalTactic (← `(tactic| exact resolution_thm₄ $fident1 $fident2))
       logInfo m!"..close goal with resolution_thm₄"
 
-syntax (name := resolution_1) "resolution_1" ident "," ident "," term : tactic
+syntax (name := resolution_1) "R1" ident "," ident "," term : tactic
 @[tactic resolution_1] def evalResolution_1 : Tactic :=
   fun stx => withMainContext do
     let firstHyp : Ident := ⟨stx[1]⟩
@@ -224,7 +224,7 @@ syntax (name := resolution_1) "resolution_1" ident "," ident "," term : tactic
     let pivotTerm : Term := ⟨stx[5]⟩
     resolutionCore firstHyp secondHyp pivotTerm
 
-syntax (name := resolution_2) "resolution_2" ident "," ident "," term : tactic
+syntax (name := resolution_2) "R2" ident "," ident "," term : tactic
 @[tactic resolution_2] def evalResolution_2 : Tactic :=
   fun stx => withMainContext do
     let firstHyp : Ident := ⟨stx[1]⟩

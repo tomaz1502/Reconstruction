@@ -21,7 +21,7 @@ def getIthExpr : Nat → Expr → Option Expr
 @[tactic permutateOr] def evalPermutateOr : Tactic :=
   fun stx => withMainContext do
     let hyp ← elabTerm stx[1] none
-    let type ← Meta.inferType hyp
+    let type ← instantiateMVars (← Meta.inferType hyp)
     let hs ← parsePermuteOr stx
     let conclusion ← go hs.reverse type hyp stx[1]
     Tactic.closeMainGoal conclusion
@@ -34,7 +34,7 @@ where go : List Nat → Expr → Expr → Syntax → TacticM Expr
            match getIthExpr i type with
            | some e => pure e
            | none   => throwError "invalid permutation"
-         let type ← Meta.inferType hyp
+         let type ← instantiateMVars (← Meta.inferType hyp)
          pullCore ithExpr type stx fnameId
          withMainContext do
            let ctx ← getLCtx

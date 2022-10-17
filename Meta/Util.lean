@@ -81,15 +81,13 @@ def stxToNat (h : TSyntax `term) : TacticM Nat := do
   let expr ← elabTerm h.raw none
   match getNatLit? expr with
   | some i => pure i
-  | none   => throwError "bla"
-
-#check LocalDecl
+  | none   => throwError "getNatLit? failed"
 
 open Lean.Elab.Tactic Lean.Meta in
 def getExprInContext (name : Name) : TacticM Expr :=
   withMainContext do
     let ctx ← getLCtx
-    inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr
+    instantiateMVars (← inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr)
 
 open Lean.Elab.Tactic Lean.Meta in
 def printGoal : TacticM Unit := do

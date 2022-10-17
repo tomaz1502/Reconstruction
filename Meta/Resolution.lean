@@ -5,27 +5,6 @@ import Lean
 open Lean Lean.Elab Lean.Elab.Tactic Lean.Meta
 open List Expr
 
--- eliminates first occurence of `e` in `o`
-def eliminate (e o : Expr) : Expr :=
-  match o with
-  | app s@(app (const `Or ..) e1) e2 =>
-    if e1 == e then e2 else
-      if e2 == e then e1 else
-        app s (eliminate e e2)
-  | e => e
-
-def eliminateIndex (i : Nat) (e : Expr) : Expr :=
-  match e with
-  | app (app (const `Or ..) e1) e2 =>
-    match i with
-    | 0 => e2
-    | 1 => match e2 with
-           | app (app (const `Or ..) _) e3 => mkApp (mkApp (mkConst `Or) e1) e3
-           | _ => e1
-    | i' =>
-        mkApp (mkApp (mkConst `Or) e1) $ eliminateIndex (i' - 1) e2
-  | e => e
-
 -- assuming `o` to be an OrChain, returns how many Props are
 -- to the left of `t`
 def getIndex (t o : Expr) : Option Nat :=
@@ -82,7 +61,6 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM 
     evalTactic (← `(tactic| have $(mkIdent name) := $hyp))
   else withMainContext do
     let last := getLength type == j
-
     let step₁: Ident ← 
       if last then pure ⟨hyp⟩
       else do
@@ -122,7 +100,6 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM 
 
     evalTactic (← `(tactic| have $(mkIdent name) := $step₄))
 
-
 syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
 
 @[tactic pull2] def evalPull2 : Tactic := fun stx => withMainContext do
@@ -130,14 +107,8 @@ syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
   let j ← stxToNat ⟨stx[3]⟩
   let nm := stx[7].getId
   let e ← elabTerm stx[5] none
-  let t ← inferType e
+  let t ← instantiateMVars (← Meta.inferType e)
   pullIndex2 i j stx[5] t nm
-
-example : A → True := by
-  intro h
-  pull2 1, 1, h, bla
-  exact True.intro
-
 
 def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
   pullIndex2 1 index hypS type name
@@ -146,8 +117,6 @@ def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (name : Name) : Tactic
 -- represented by hyp
 def pullCore (pivot type : Expr) (hypS : Syntax) (name : Name) : TacticM Unit :=
   withMainContext do
-    logInfo type
-    logInfo pivot
     let index' := getIndex pivot type
     let index ←
       match index' with
@@ -181,8 +150,8 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
   let pivotExpr ← elabTerm pivotTerm none
   let notPivotExpr ← elabTerm notPivot none
-  let firstHypType ← inferType (← elabTerm firstHyp none)
-  let secondHypType ← inferType (← elabTerm secondHyp none)
+  let firstHypType ← instantiateMVars (← inferType (← elabTerm firstHyp none))
+  let secondHypType ← instantiateMVars (← inferType (← elabTerm secondHyp none))
 
   let lenGoal ← getLength <$> getMainTarget
   pullCore pivotExpr    firstHypType  firstHyp  fname1
@@ -193,8 +162,6 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let len₁ := getLength firstHypType
   let len₂ := getLength secondHypType
 
-  /- logInfo m!"{lenGoal}" -/
-  /- logInfo (← getMainTarget) -/
   if lenGoal > 2 then
     for s in getCongAssoc (len₁ - 2) `orAssocConv do
       evalTactic (← `(tactic| apply $s))

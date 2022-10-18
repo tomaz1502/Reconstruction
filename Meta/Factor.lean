@@ -8,93 +8,62 @@ open Lean.Elab.Tactic
 open Lean.Expr
 open Lean.Meta
 
-def excludeFirst : Expr → Expr :=
-  createOrChain ∘ List.drop 1 ∘ collectPropsInOrChain
+def congDupOr (i : Nat) (nm : Ident) (last : Bool) : TacticM Syntax :=
+  match i with
+  | 0 =>
+    if last then `(dupOr₂ $nm)
+    else `(dupOr $nm)
+  | (i' + 1) => do
+    let nm' := mkIdent (Name.mkSimple "w")
+    let r ← congDupOr i' nm' last
+    let r: Term := ⟨r⟩
+    `(congOrLeft (fun $nm' => $r) $nm)
 
-def eraseDups : Expr → Expr :=
-  createOrChain ∘ List.eraseDups ∘ collectPropsInOrChain
-
-def go (hyp type e : Expr) (li : List Expr) (name : Name) : TacticM Name := do
-   match li with
-   | []   => return name
-   | h::t => match e == h with
-             | false => go hyp type e t name
-             | true  =>
-               withMainContext do
-                 let fname ← mkFreshId
-                 try
-                   pullCore h hyp type fname
-                 catch e => do
-                   throwError e.toMessageData
-                 withMainContext do
-                   let fname2 ← mkFreshId
-                   let ctx ← getLCtx
-                   let pullHyp := (ctx.findFromUserName? (mkIdent fname).getId).get!.toExpr
-                   let pullHypType ← inferType pullHyp
-                   -- jump the first occurence (the one pulled by pullCore)
-                   let index := (getOccs h type).get! 1
-                   pullIndex index pullHyp pullHypType fname2
-                   withMainContext do
-                     let ctx2 ← getLCtx
-                     let pull2Hyp ← inferType (ctx2.findFromUserName? (mkIdent fname2).getId).get!.toExpr
-                     let fname3 ← mkFreshId
-                     let newGoal := excludeFirst pull2Hyp
-                     let mvarId ← getMainGoal
-                     Meta.withMVarContext mvarId do
-                       let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque fname3
-                       let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId fname3 newGoal p
-                       replaceMainGoal [p.mvarId!, mvarIdNew]
-                       if getLength newGoal > 2 then
-                         evalTactic (← `(tactic| exact dupOr $(mkIdent fname2)))
-                       else
-                         evalTactic (← `(tactic| exact dupOr₂ $(mkIdent fname2)))
-                       withMainContext do
-                         let ctx3 ← getLCtx
-                         let dupFreeHyp := (ctx3.findFromUserName? (mkIdent fname3).getId).get!.toExpr
-                         evalTactic (← `(tactic| clear $(mkIdent fname)))
-                         evalTactic (← `(tactic| clear $(mkIdent fname2)))
-                         go dupFreeHyp newGoal e t fname3
-
-
-def factorLoop (hyp type : Expr) (li : List Expr) (name : Name) : TacticM Name :=
+-- i: the index fixed in the original list
+-- j: the index of li.head! in the original list
+def loop (i j n : Nat) (pivot : Expr) (li : List Expr) (nm : Ident) : TacticM Ident :=
   match li with
-  | []    => return name
+  | [] => return nm
   | e::es =>
-    withMainContext do
-      let fname ← mkFreshId
-      let newName ← go hyp type e es fname
-      withMainContext do
-        let ctx ← getLCtx
-        match (ctx.findFromUserName? (mkIdent newName).getId) with
-        | none => factorLoop hyp type es name
-        | some newHyp' =>
-          let newHyp := newHyp'.toExpr
-          let newType ← inferType newHyp
-          if Option.isSome (ctx.findFromUserName? name)
-          then
-            evalTactic (← `(tactic| clear $(mkIdent name)))
-          else pure ()
-          factorLoop newHyp newType es newName
+    if e == pivot then do
+      -- step₁: move expr that is equal to the pivot to position i + 1
+      let step₁ ←
+        if j > i + 1 then
+          let fname ← mkIdent <$> mkFreshId
+          let e ← getExprInContext nm.getId
+          let t ← instantiateMVars e
+          pullIndex2 (i + 1) j nm t fname
+          pure fname
+        else pure nm
 
-def factorCore (e type : Expr) (name : Name) : TacticM Unit :=
+      -- step₂: apply congOrLeft i times with dupOr
+      let step₂: Ident ← do
+        let last := i + 1 == n - 1
+        let tactic ← congDupOr i step₁ last 
+        let tactic := ⟨tactic⟩
+        let fname ← mkIdent <$> mkFreshId
+        evalTactic (← `(tactic| have $fname := $tactic))
+        pure fname
+
+      loop i j (n - 1) pivot es step₂
+    else loop i (j + 1) n pivot es nm
+
+def factorCore (type : Expr) (source result : Ident) : TacticM Unit :=
   withMainContext do
-    let li := collectPropsInOrChain type
-    let fname ← mkFreshId
-    let newName ← factorLoop e type li fname
-    let newExpr ←
-      withMainContext do
-        let ctx ← getLCtx
-        match ctx.findFromUserName? (mkIdent newName).getId with
-        | none      => pure e
-        | some hyp' => pure $ hyp'.toExpr
-    let newGoal := eraseDups type
-    let mvarId ← getMainGoal
-    Meta.withMVarContext mvarId do
-      let p ← Meta.mkFreshExprMVar newGoal MetavarKind.syntheticOpaque name
-      let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newGoal p
-      replaceMainGoal [p.mvarId!, mvarIdNew]
-      Tactic.closeMainGoal newExpr
-      evalTactic (← `(tactic| clear $(mkIdent newName)))
+    let mut li := collectPropsInOrChain type
+    let n := li.length
+    let mut answer := source
+    for i in List.range n do
+      li := List.drop i li
+      match li with
+      | [] => break
+      | e::es => do
+        answer ← loop i (i + 1) (li.length + i) e es answer
+        let e ← getExprInContext answer.getId
+        let t ← instantiateMVars e
+        li := collectPropsInOrChain t
+
+    evalTactic (← `(tactic| have $result := $answer))
 
 syntax (name := factor) "factor" term "," ident : tactic
 
@@ -102,11 +71,12 @@ syntax (name := factor) "factor" term "," ident : tactic
   withMainContext do
     let e ← elabTerm stx[1] none
     let type ← inferType e
-    let name := Syntax.getId stx[3]
-    factorCore e type name
+    let source := ⟨stx[1]⟩
+    let result := ⟨stx[3]⟩
+    factorCore type source result
 
-example : A ∨ A ∨ A → True :=
+example : A ∨ A ∨ A ∨ A ∨ B ∨ A ∨ B ∨ A ∨ C ∨ B ∨ C ∨ B ∨ A → True :=
   by intro h
-     /- factor h, bla -/
+     factor h, bla
 
      admit

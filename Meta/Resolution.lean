@@ -34,31 +34,28 @@ def fold (l : List Term) (nm : Ident) : Syntax :=
 
 def go (tactics : List Term) (i : Nat) (nm : Ident) (last : Bool) : TacticM Syntax :=
   match i with
-  | 0 =>
-    withMainContext do
-      if last then
-        let innerProof := fold tactics nm
-        let innerProof: Term := ⟨innerProof⟩
-        `($innerProof)
-      else
-        let fname := mkIdent (Name.mkSimple "w")
-        let innerProof := fold tactics fname
-        let innerProof: Term := ⟨innerProof⟩
-        `(congOrRight (fun $fname => $innerProof) $nm)
-  | (i' + 1) =>
-    withMainContext do
-      let nm' := Name.mkSimple "w"
-      let nm' := mkIdent nm'
-      let r ← go tactics i' nm' last
-      let r: Term := ⟨r⟩
-      `(congOrLeft (fun $nm' => $r) $nm)
+  | 0 => do
+    if last then
+      let innerProof := fold tactics nm
+      let innerProof: Term := ⟨innerProof⟩
+      `($innerProof)
+    else
+      let nm' := mkIdent (Name.mkSimple "w")
+      let innerProof := fold tactics nm'
+      let innerProof: Term := ⟨innerProof⟩
+      `(congOrRight (fun $nm' => $innerProof) $nm)
+  | (i' + 1) => do
+    let nm' := mkIdent (Name.mkSimple "w")
+    let r ← go tactics i' nm' last
+    let r: Term := ⟨r⟩
+    `(congOrLeft (fun $nm' => $r) $nm)
 
 -- pull j-th term in the orchain to i-th position (we start counting indices at 0)
 -- TODO: clear intermediate steps
-def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
+def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (id : Ident) : TacticM Unit :=
   if i == j then do
     let hyp: Term := ⟨hyp⟩
-    evalTactic (← `(tactic| have $(mkIdent name) := $hyp))
+    evalTactic (← `(tactic| have $id := $hyp))
   else withMainContext do
     let last := getLength type == j + 1
     let step₁: Ident ← 
@@ -98,34 +95,35 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM 
         let step₄: Ident := ⟨step₄⟩
         pure step₄
 
-    evalTactic (← `(tactic| have $(mkIdent name) := $step₄))
+    evalTactic (← `(tactic| have $id := $step₄))
 
 syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
 
 @[tactic pull2] def evalPull2 : Tactic := fun stx => withMainContext do
   let i ← stxToNat ⟨stx[1]⟩ 
   let j ← stxToNat ⟨stx[3]⟩
-  let nm := stx[7].getId
+  let id: Ident := ⟨stx[7]⟩
   let e ← elabTerm stx[5] none
   let t ← instantiateMVars (← Meta.inferType e)
-  pullIndex2 i j stx[5] t nm
+  pullIndex2 i j stx[5] t id
 
-def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
-  pullIndex2 0 index hypS type name
+def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (id : Ident) : TacticM Unit :=
+  pullIndex2 0 index hypS type id
 
 -- insert pivot in the first position of the or-chain
 -- represented by hyp
-def pullCore (pivot type : Expr) (hypS : Syntax) (name : Name) : TacticM Unit := do
+def pullCore (pivot type : Expr) (hypS : Syntax) (id : Ident) : TacticM Unit := do
   let index' := getIndex pivot type
   let index ←
     match index' with
     | some i => pure i
-    | none   => throwError "term not found"
-  pullIndex index hypS type name
+    | none   => throwError ("term not found: " ++ (toString pivot))
+  pullIndex index hypS type id
 
-example : A ∨ B ∨ C ∨ D → True := by
+example : A ∨ B ∨ A → True := by
   intro h
-  pull2 0, 3, h, bla
+  pull2 1, 2, h, bla
+
 
   exact True.intro
 
@@ -150,8 +148,8 @@ theorem resolution_thm₃ : ∀ {A B: Prop}, (A ∨ B) → ¬ A → B := λ orab
 theorem resolution_thm₄ : ∀ {A : Prop}, A → ¬ A → False := λ a na => na a
 
 def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Unit := do
-  let fname1 ← mkFreshId
-  let fname2 ← mkFreshId
+  let fident1 ← mkIdent <$> mkFreshId
+  let fident2 ← mkIdent <$> mkFreshId
   let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
   let pivotExpr     ← elabTerm pivotTerm none
   let notPivotExpr  ← elabTerm notPivot none
@@ -159,11 +157,9 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let secondHypType ← inferType (← elabTerm secondHyp none)
 
   let lenGoal ← getLength <$> getMainTarget
-  pullCore pivotExpr    firstHypType  firstHyp  fname1
-  pullCore notPivotExpr secondHypType secondHyp fname2
+  pullCore pivotExpr    firstHypType  firstHyp  fident1
+  pullCore notPivotExpr secondHypType secondHyp fident2
 
-  let fident1 := mkIdent fname1
-  let fident2 := mkIdent fname2
   let len₁ := getLength firstHypType
   let len₂ := getLength secondHypType
 

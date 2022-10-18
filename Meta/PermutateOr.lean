@@ -29,16 +29,15 @@ where go : List Nat → Expr → Expr → Syntax → TacticM Expr
        | [], _, hyp, _ => return hyp
        | (i::is), type, hyp, stx => do
          let fname ← mkIdent <$> mkFreshId
-         let fnameId := fname.getId
          let ithExpr ←
            match getIthExpr i type with
            | some e => pure e
            | none   => throwError "invalid permutation"
          let type ← instantiateMVars (← Meta.inferType hyp)
-         pullCore ithExpr type stx fnameId
+         pullCore ithExpr type stx fname
          withMainContext do
            let ctx ← getLCtx
-           let hyp' := (ctx.findFromUserName? fnameId).get!.toExpr
+           let hyp' := (ctx.findFromUserName? fname.getId).get!.toExpr
            go is type hyp' stx
 
 

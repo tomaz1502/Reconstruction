@@ -1,12 +1,9 @@
-import Meta.Boolean
-import Meta.Resolution
 import Lean
 
-open Lean
-open Lean.Elab
-open Lean.Elab.Tactic
-open Lean.Expr
-open Lean.Meta
+import Meta.Boolean
+import Meta.Resolution
+
+open Lean Elab.Tactic Meta
 
 def congDupOr (i : Nat) (nm : Ident) (last : Bool) : TacticM Syntax :=
   match i with
@@ -30,7 +27,7 @@ def loop (i j n : Nat) (pivot : Expr) (li : List Expr) (nm : Ident) : TacticM Id
       let step₁ ←
         if j > i + 1 then
           let fname ← mkIdent <$> mkFreshId
-          let e ← getExprInContext nm.getId
+          let e ← getTypeFromName nm.getId
           let t ← instantiateMVars e
           pullIndex2 (i + 1) j nm t fname
           pure fname
@@ -59,10 +56,9 @@ def factorCore (type : Expr) (source result : Ident) : TacticM Unit :=
       | [] => break
       | e::es => do
         answer ← loop i (i + 1) (li.length + i) e es answer
-        let e ← getExprInContext answer.getId
+        let e ← getTypeFromName answer.getId
         let t ← instantiateMVars e
         li := collectPropsInOrChain t
-
     evalTactic (← `(tactic| have $result := $answer))
 
 syntax (name := factor) "factor" term "," ident : tactic
@@ -78,5 +74,4 @@ syntax (name := factor) "factor" term "," ident : tactic
 example : A ∨ A ∨ A ∨ A ∨ B ∨ A ∨ B ∨ A ∨ C ∨ B ∨ C ∨ B ∨ A → True :=
   by intro h
      factor h, bla
-
-     admit
+     exact True.intro

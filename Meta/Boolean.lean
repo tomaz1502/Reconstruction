@@ -1,11 +1,6 @@
-/-Theorems for boolean rules-/
-import Lean
 import Meta.Util
 
-open Lean Lean.Elab Lean.Elab.Tactic Lean.Meta Expr Classical
-open Lean.Elab.Term
-
-open Nat List
+open Nat List Classical
 
 theorem notImplies1 : ∀ {P Q : Prop}, ¬ (P → Q) → P := by
   intros P Q h
@@ -147,12 +142,7 @@ theorem cnfAndNeg : ∀ (l : List Prop), andN l ∨ orN (notList l) :=
      intro h
      exact deMorgan h
  
-def getProp : List Prop → Nat → Prop
-  | [], _ => True
-  | a::_, 0 => a
-  | _::as, (i + 1) => getProp as i
-
-theorem cnfAndPos : ∀ (l : List Prop) (i : Nat),  ¬ (andN l) ∨ getProp l i :=
+theorem cnfAndPos : ∀ (l : List Prop) (i : Nat), ¬ (andN l) ∨ List.getD l i True :=
   by intros l i
      apply orImplies
      intro h
@@ -167,7 +157,7 @@ theorem cnfAndPos : ∀ (l : List Prop) (i : Nat),  ¬ (andN l) ∨ getProp l i 
        match i with
        | zero => exact And.left h' 
        | succ i' =>
-         simp [getProp]
+         simp [List.getD]
          have IH :=  cnfAndPos (p₂::ps) i'
          exact orImplies₂ IH (And.right h')
 
@@ -176,51 +166,6 @@ theorem cong : ∀ {A B : Type u} {f₁ f₂ : A → B} {t₁ t₂ : A},
   by intros A B f₁ f₂ t₁ t₂ h₁ h₂
      rewrite [h₁, h₂]
      exact rfl
-
-def getGroupOrPrefixGoal : Expr → Nat → Expr
-| e, n => let props := collectPropsInOrChain e
-          let left := createOrChain (take n props)
-          let right := createOrChain (drop n props)
-          app (app (mkConst `Or) left) right
-
--- groups the given prefix of the given hypothesis (assuming it is an
--- or-chain) and adds this as a new hypothesis with the given name
-def groupOrPrefixCore : Expr → Nat → Name → TacticM Unit :=
-  fun hyp prefLen name => withMainContext do
-    let type ← inferType hyp
-    let l := getLength type
-    if prefLen > 1 && prefLen < l then
-      let mvarId ← getMainGoal
-      Meta.withMVarContext mvarId do
-        let newTerm := getGroupOrPrefixGoal type prefLen
-        let p ← Meta.mkFreshExprMVar newTerm MetavarKind.syntheticOpaque name
-        let (_, mvarIdNew) ← Meta.intro1P $ ← Meta.assert mvarId name newTerm p
-        replaceMainGoal [p.mvarId!, mvarIdNew]
-      for t in reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
-        evalTactic  (← `(tactic| apply $t))
-      Tactic.closeMainGoal hyp
-    else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
-
-syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
-
-@[tactic liftOrNToImp] def evalLiftOrNToImp : Tactic :=
-  fun stx => withMainContext do
-    let prefLen ← 
-      match ← getNatLit? <$> Tactic.elabTerm stx[3] none with
-      | Option.some i => pure i
-      | Option.none   => throwError "[liftNOrToImp]: second argument must be a nat lit"
-    let fname1 ← mkFreshId
-    let hyp ← Tactic.elabTerm stx[1] none
-    let type ← inferType hyp
-    groupOrPrefixCore hyp prefLen fname1
-    let fname2 ← mkIdent <$> mkFreshId
-    let _ ← evalTactic (← `(tactic| intros $fname2))
-    let _ ← evalTactic (← `(tactic| apply orImplies₃ $(mkIdent fname1)))
-    let li := listExpr (collectNOrNegArgs type prefLen) (Expr.sort Level.zero)
-    withMainContext do
-      let ctx ← getLCtx
-      let hyp2 := (ctx.findFromUserName? fname2.getId).get!.toExpr
-      Tactic.closeMainGoal $ mkApp (mkApp (mkConst `deMorgan₂) li) hyp2
 
 theorem eqResolve {P Q : Prop} : P → (P ↔ Q) → Q := by
   intros h₁ h₂
@@ -237,4 +182,3 @@ theorem dupOr₂ {P : Prop} : P ∨ P → P := λ h =>
   match h with
   | Or.inl p => p
   | Or.inr p => p
-

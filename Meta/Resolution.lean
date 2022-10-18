@@ -1,18 +1,10 @@
-import Meta.Boolean
-
 import Lean
 
-open Lean Lean.Elab Lean.Elab.Tactic Lean.Meta
-open List Expr
+import Meta.Boolean
+import Meta.Util
 
--- assuming `o` to be an OrChain, returns how many Props are
--- to the left of `t`
-def getIndex (t o : Expr) : Option Nat :=
-  match o with
-  | app (app (const `Or ..) e1) e2 => if e1 == t then some 0
-                                      else (. + 1) <$> getIndex t e2
-  | e => if e == t then some 0
-         else none
+open Lean Elab Tactic Expr Meta
+open List
 
 def applyList (l: List Term) (res: Term) : TacticM Term :=
   match l with
@@ -120,13 +112,6 @@ def pullCore (pivot type : Expr) (hypS : Syntax) (id : Ident) : TacticM Unit := 
     | none   => throwError ("term not found: " ++ (toString pivot))
   pullIndex index hypS type id
 
-example : A ∨ B ∨ A → True := by
-  intro h
-  pull2 1, 2, h, bla
-
-
-  exact True.intro
-
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
   cases h₁ with
@@ -199,4 +184,3 @@ syntax (name := resolution_2) "R2" ident "," ident "," term : tactic
     let secondHyp : Ident := ⟨stx[3]⟩
     let pivotTerm : Term := ⟨stx[5]⟩
     resolutionCore secondHyp firstHyp pivotTerm
-

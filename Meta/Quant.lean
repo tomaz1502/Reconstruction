@@ -5,17 +5,17 @@ theorem instForAll {A : Type u} {f : A → Prop} {a : A} :
   intro h
   exact h a
 
-theorem zulipHaniel₁ {A : Type u} {P : A → Prop} {t : A} :
+theorem instEqual₁ {A : Type u} {P : A → Prop} {t : A} :
   (forall x : A, x = t → P x) → P t := by
   intro h
   exact h t rfl
 
-theorem zulipHaniel₂ {A : Type u} {P : A → Prop} {t : A} :
+theorem instEqual₂ {A : Type u} {P : A → Prop} {t : A} :
   P t → (forall x : A, x = t → P x) := by
   intros h x r
   rewrite [r]
   exact h
 
-theorem zulipHaniel {A : Type u} {P : A → Prop} {t : A} :
-  (forall x : A, x = t → P x) ↔ P t := ⟨zulipHaniel₁, zulipHaniel₂⟩
+theorem instEqual {A : Type u} {P : A → Prop} {t : A} :
+  (forall x : A, x = t → P x) ↔ P t := ⟨instEqual₁, instEqual₂⟩
 

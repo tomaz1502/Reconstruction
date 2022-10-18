@@ -30,13 +30,13 @@ def go (hyp type e : Expr) (li : List Expr) (name : Name) : TacticM Name := do
                    let fname2 ← mkFreshId
                    let ctx ← getLCtx
                    let pullHyp := (ctx.findFromUserName? (mkIdent fname).getId).get!.toExpr
-                   let pullHypType ← instantiateMVars (← inferType pullHyp)
+                   let pullHypType ← inferType pullHyp
                    -- jump the first occurence (the one pulled by pullCore)
                    let index := (getOccs h type).get! 1
                    pullIndex index pullHyp pullHypType fname2
                    withMainContext do
                      let ctx2 ← getLCtx
-                     let pull2Hyp ← instantiateMVars (← inferType (ctx2.findFromUserName? (mkIdent fname2).getId).get!.toExpr)
+                     let pull2Hyp ← inferType (ctx2.findFromUserName? (mkIdent fname2).getId).get!.toExpr
                      let fname3 ← mkFreshId
                      let newGoal := excludeFirst pull2Hyp
                      let mvarId ← getMainGoal
@@ -69,7 +69,7 @@ def factorLoop (hyp type : Expr) (li : List Expr) (name : Name) : TacticM Name :
         | none => factorLoop hyp type es name
         | some newHyp' =>
           let newHyp := newHyp'.toExpr
-          let newType ← instantiateMVars (← inferType newHyp)
+          let newType ← inferType newHyp
           if Option.isSome (ctx.findFromUserName? name)
           then
             evalTactic (← `(tactic| clear $(mkIdent name)))
@@ -101,7 +101,7 @@ syntax (name := factor) "factor" term "," ident : tactic
 @[tactic factor] def evalFactor : Tactic := fun stx =>
   withMainContext do
     let e ← elabTerm stx[1] none
-    let type ← instantiateMVars (← inferType e)
+    let type ← inferType e
     let name := Syntax.getId stx[3]
     factorCore e type name
 

@@ -21,7 +21,7 @@ def getIthExpr : Nat → Expr → Option Expr
 @[tactic permutateOr] def evalPermutateOr : Tactic :=
   fun stx => withMainContext do
     let hyp ← elabTerm stx[1] none
-    let type ← instantiateMVars (← Meta.inferType hyp)
+    let type ← Meta.inferType hyp
     let hs ← parsePermuteOr stx
     let conclusion ← go hs.reverse type hyp stx[1]
     Tactic.closeMainGoal conclusion

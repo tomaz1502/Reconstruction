@@ -53,18 +53,18 @@ def go (tactics : List Term) (i : Nat) (nm : Ident) (last : Bool) : TacticM Synt
       let r: Term := ⟨r⟩
       `(congOrLeft (fun $nm' => $r) $nm)
 
--- pull j-th term in the orchain to i-th position (1-based)
+-- pull j-th term in the orchain to i-th position (we start counting indices at 0)
 -- TODO: clear intermediate steps
 def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
   if i == j then do
     let hyp: Term := ⟨hyp⟩
     evalTactic (← `(tactic| have $(mkIdent name) := $hyp))
   else withMainContext do
-    let last := getLength type == j
+    let last := getLength type == j + 1
     let step₁: Ident ← 
       if last then pure ⟨hyp⟩
       else do
-        let v := List.take (j - i) $ getCongAssoc (j - 1) `orAssocDir
+        let v := List.take (j - i) $ getCongAssoc j `orAssocDir
         let res: Term := ⟨hyp⟩
         let step₁: Term ← applyList v res
         let step₁: Ident := ⟨step₁⟩ 
@@ -72,20 +72,20 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM 
 
     let step₂: Ident ←
       if last then do
-        let tactics := List.take (j - 1 - i) $ getCongAssoc (j - 2) `orAssocDir
+        let tactics := List.take (j - 1 - i) $ getCongAssoc (j - 1) `orAssocDir
         let step₂: Term ← applyList tactics step₁
         let step₂: Ident := ⟨step₂⟩
         pure step₂
       else do
         let tactics₂ := List.reverse $ getCongAssoc (j - i - 1) `orAssocDir
-        let wrappedTactics₂: Syntax ← go tactics₂ (i - 1) step₁ last
+        let wrappedTactics₂: Syntax ← go tactics₂ i step₁ last
         let wrappedTactics₂: Term := ⟨wrappedTactics₂⟩
         let fname₂ ← mkIdent <$> mkFreshId
         evalTactic (← `(tactic| have $fname₂ := $wrappedTactics₂))
         pure fname₂
     
     let orComm: Term := ⟨mkIdent `orComm⟩
-    let wrappedTactics₃ ← go [orComm] (i - 1) step₂ last
+    let wrappedTactics₃ ← go [orComm] i step₂ last
     let wrappedTactics₃ := ⟨wrappedTactics₃⟩
     let step₃ ← mkIdent <$> mkFreshId
     evalTactic (← `(tactic| have $step₃ := $wrappedTactics₃))
@@ -93,7 +93,7 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (name : Name) : TacticM 
     let step₄: Ident ←
       if last then do pure step₃ 
       else do
-        let u := List.reverse $ List.take (j - i) $ getCongAssoc (j - 1) `orAssocConv
+        let u := List.reverse $ List.take (j - i) $ getCongAssoc j `orAssocConv
         let step₄: Term ← applyList u step₃
         let step₄: Ident := ⟨step₄⟩
         pure step₄
@@ -111,18 +111,23 @@ syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
   pullIndex2 i j stx[5] t nm
 
 def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (name : Name) : TacticM Unit :=
-  pullIndex2 1 index hypS type name
+  pullIndex2 0 index hypS type name
 
 -- insert pivot in the first position of the or-chain
 -- represented by hyp
-def pullCore (pivot type : Expr) (hypS : Syntax) (name : Name) : TacticM Unit :=
-  withMainContext do
-    let index' := getIndex pivot type
-    let index ←
-      match index' with
-      | some i => pure i
-      | none   => throwError "term not found"
-    pullIndex (index + 1) hypS type name
+def pullCore (pivot type : Expr) (hypS : Syntax) (name : Name) : TacticM Unit := do
+  let index' := getIndex pivot type
+  let index ←
+    match index' with
+    | some i => pure i
+    | none   => throwError "term not found"
+  pullIndex index hypS type name
+
+example : A ∨ B ∨ C ∨ D → True := by
+  intro h
+  pull2 0, 3, h, bla
+
+  exact True.intro
 
 theorem resolution_thm : ∀ {A B C : Prop}, (A ∨ B) → (¬ A ∨ C) → B ∨ C := by
   intros A B C h₁ h₂
@@ -148,10 +153,10 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   let fname1 ← mkFreshId
   let fname2 ← mkFreshId
   let notPivot : Term := Syntax.mkApp (mkIdent `Not) #[pivotTerm]
-  let pivotExpr ← elabTerm pivotTerm none
-  let notPivotExpr ← elabTerm notPivot none
-  let firstHypType ← instantiateMVars (← inferType (← elabTerm firstHyp none))
-  let secondHypType ← instantiateMVars (← inferType (← elabTerm secondHyp none))
+  let pivotExpr     ← elabTerm pivotTerm none
+  let notPivotExpr  ← elabTerm notPivot none
+  let firstHypType  ← inferType (← elabTerm firstHyp none)
+  let secondHypType ← inferType (← elabTerm secondHyp none)
 
   let lenGoal ← getLength <$> getMainTarget
   pullCore pivotExpr    firstHypType  firstHyp  fname1

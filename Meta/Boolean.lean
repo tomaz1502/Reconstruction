@@ -187,7 +187,7 @@ def getGroupOrPrefixGoal : Expr → Nat → Expr
 -- or-chain) and adds this as a new hypothesis with the given name
 def groupOrPrefixCore : Expr → Nat → Name → TacticM Unit :=
   fun hyp prefLen name => withMainContext do
-    let type ← instantiateMVars (← inferType hyp)
+    let type ← inferType hyp
     let l := getLength type
     if prefLen > 1 && prefLen < l then
       let mvarId ← getMainGoal
@@ -211,7 +211,7 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
       | Option.none   => throwError "[liftNOrToImp]: second argument must be a nat lit"
     let fname1 ← mkFreshId
     let hyp ← Tactic.elabTerm stx[1] none
-    let type ← instantiateMVars (← inferType hyp)
+    let type ← inferType hyp
     groupOrPrefixCore hyp prefLen fname1
     let fname2 ← mkIdent <$> mkFreshId
     let _ ← evalTactic (← `(tactic| intros $fname2))

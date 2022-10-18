@@ -87,7 +87,7 @@ open Lean.Elab.Tactic Lean.Meta in
 def getExprInContext (name : Name) : TacticM Expr :=
   withMainContext do
     let ctx ← getLCtx
-    instantiateMVars (← inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr)
+    inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr
 
 open Lean.Elab.Tactic Lean.Meta in
 def printGoal : TacticM Unit := do

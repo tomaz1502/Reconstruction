@@ -1,6 +1,6 @@
 import Lean
 
-import Meta.Resolution
+import Meta.Pull
 import Meta.Util
 
 open Lean Elab Tactic

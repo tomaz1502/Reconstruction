@@ -1,7 +1,7 @@
 import Lean
 
 import Meta.Boolean
-import Meta.Resolution
+import Meta.Pull
 
 open Lean Elab.Tactic Meta
 

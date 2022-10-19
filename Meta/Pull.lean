@@ -32,12 +32,12 @@ def congTactics (tactics : List Term) (i : Nat) (id : Ident) (last : Bool) : Tac
       let id' := mkIdent (Name.mkSimple "w")
       let innerProof := mkAppList tactics id'
       let innerProof: Term := ⟨innerProof⟩
-      `(concongTacticsrRight (fun $id' => $innerProof) $id)
+      `(congOrRight (fun $id' => $innerProof) $id)
   | (i' + 1) => do
     let id' := mkIdent (Name.mkSimple "w")
     let r ← congTactics tactics i' id' last
     let r: Term := ⟨r⟩
-    `(concongTacticsrLeft (fun $id' => $r) $id)
+    `(congOrLeft (fun $id' => $r) $id)
 
 -- pull j-th term in the orchain to i-th position (we start counting indices at 0)
 -- TODO: clear intermediate steps

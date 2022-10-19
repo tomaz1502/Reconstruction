@@ -14,31 +14,30 @@ def applyList (l: List Term) (res: Term) : TacticM Term :=
       evalTactic (← `(tactic| have $fname := $res'))
       applyList ts fname
 
-def fold (l : List Term) (nm : Ident) : Syntax :=
-  match l with
-  | [] => nm
-  | t::ts =>
-    let rest := fold ts nm
-    let rest := ⟨rest⟩
-    Syntax.mkApp t #[rest]
+def mkAppList : List Term → Ident → Syntax
+| [], id => id
+| t::ts, id =>
+  let rest := mkAppList ts id
+  let rest := ⟨rest⟩
+  Syntax.mkApp t #[rest]
 
-def go (tactics : List Term) (i : Nat) (nm : Ident) (last : Bool) : TacticM Syntax :=
+def congTactics (tactics : List Term) (i : Nat) (id : Ident) (last : Bool) : TacticM Syntax :=
   match i with
   | 0 => do
     if last then
-      let innerProof := fold tactics nm
+      let innerProof := mkAppList tactics id
       let innerProof: Term := ⟨innerProof⟩
       `($innerProof)
     else
-      let nm' := mkIdent (Name.mkSimple "w")
-      let innerProof := fold tactics nm'
+      let id' := mkIdent (Name.mkSimple "w")
+      let innerProof := mkAppList tactics id'
       let innerProof: Term := ⟨innerProof⟩
-      `(congOrRight (fun $nm' => $innerProof) $nm)
+      `(concongTacticsrRight (fun $id' => $innerProof) $id)
   | (i' + 1) => do
-    let nm' := mkIdent (Name.mkSimple "w")
-    let r ← go tactics i' nm' last
+    let id' := mkIdent (Name.mkSimple "w")
+    let r ← congTactics tactics i' id' last
     let r: Term := ⟨r⟩
-    `(congOrLeft (fun $nm' => $r) $nm)
+    `(concongTacticsrLeft (fun $id' => $r) $id)
 
 -- pull j-th term in the orchain to i-th position (we start counting indices at 0)
 -- TODO: clear intermediate steps
@@ -65,20 +64,20 @@ def pullIndex2 (i j : Nat) (hyp : Syntax) (type : Expr) (id : Ident) : TacticM U
         pure step₂
       else do
         let tactics₂ := List.reverse $ getCongAssoc (j - i - 1) `orAssocDir
-        let wrappedTactics₂: Syntax ← go tactics₂ i step₁ last
+        let wrappedTactics₂: Syntax ← congTactics tactics₂ i step₁ last
         let wrappedTactics₂: Term := ⟨wrappedTactics₂⟩
         let fname₂ ← mkIdent <$> mkFreshId
         evalTactic (← `(tactic| have $fname₂ := $wrappedTactics₂))
         pure fname₂
     
     let orComm: Term := ⟨mkIdent `orComm⟩
-    let wrappedTactics₃ ← go [orComm] i step₂ last
+    let wrappedTactics₃ ← congTactics [orComm] i step₂ last
     let wrappedTactics₃ := ⟨wrappedTactics₃⟩
     let step₃ ← mkIdent <$> mkFreshId
     evalTactic (← `(tactic| have $step₃ := $wrappedTactics₃))
 
     let step₄: Ident ←
-      if last then do pure step₃ 
+      if last then pure step₃ 
       else do
         let u := List.reverse $ List.take (j - i) $ getCongAssoc j `orAssocConv
         let step₄: Term ← applyList u step₃

@@ -1,5 +1,6 @@
 import Lean
 
+import Meta.Boolean
 import Meta.Util
 
 open Lean Elab Tactic Meta Expr
@@ -13,9 +14,8 @@ def getGroupOrPrefixGoal : Expr → Nat → Expr
 
 -- groups the given prefix of the given hypothesis (assuming it is an
 -- or-chain) and adds this as a new hypothesis with the given name
-def groupOrPrefixCore : Expr → Nat → Name → TacticM Unit :=
-  fun hyp prefLen name => withMainContext do
-    let type ← inferType hyp
+def groupOrPrefixCore (hyp type : Expr) (prefLen : Nat) (name : Name)
+  : TacticM Unit := withMainContext do
     let l := getLength type
     if prefLen > 1 && prefLen < l then
       let mvarId ← getMainGoal
@@ -27,7 +27,8 @@ def groupOrPrefixCore : Expr → Nat → Name → TacticM Unit :=
       for t in reverse (getCongAssoc (prefLen - 1) `orAssocDir) do
         evalTactic  (← `(tactic| apply $t))
       Tactic.closeMainGoal hyp
-    else throwError "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
+    else throwError
+           "[groupOrPrefix]: prefix length must be > 1 and < size of or-chain"
 
 syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
 
@@ -37,7 +38,7 @@ syntax (name := liftOrNToImp) "liftOrNToImp" term "," term : tactic
     let fname1 ← mkFreshId
     let hyp ← Tactic.elabTerm stx[1] none
     let type ← inferType hyp
-    groupOrPrefixCore hyp prefLen fname1
+    groupOrPrefixCore hyp type prefLen fname1
     let fname2 ← mkIdent <$> mkFreshId
     evalTactic (← `(tactic| intros $fname2))
     evalTactic (← `(tactic| apply orImplies₃ $(mkIdent fname1)))

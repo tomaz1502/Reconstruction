@@ -78,7 +78,7 @@ def stxToNat (h : Term) : TacticM Nat := do
 def getTypeFromName (name : Name) : TacticM Expr :=
   withMainContext do
     let ctx ← getLCtx
-    inferType (ctx.findFromUserName? (mkIdent name).getId).get!.toExpr
+    inferType (ctx.findFromUserName? name).get!.toExpr
 
 def printGoal : TacticM Unit := do
   let currGoal ← getMainGoal

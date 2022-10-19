@@ -37,7 +37,10 @@ def resolutionCore (firstHyp secondHyp : Ident) (pivotTerm : Term) : TacticM Uni
   pullCore pivotExpr    firstHypType  firstHyp  fident1
   pullCore notPivotExpr secondHypType secondHyp fident2
 
-  let len₁ := getLength firstHypType
+  let mut len₁ := getLength firstHypType
+  if Option.isNone (getIndex pivotExpr firstHypType) then
+    len₁ := len₁ - (getLength pivotExpr) + 1
+
   let len₂ := getLength secondHypType
 
   if lenGoal > 2 then
@@ -76,3 +79,8 @@ syntax (name := resolution_2) "R2" ident "," ident "," term : tactic
     let secondHyp : Ident := ⟨stx[3]⟩
     let pivotTerm : Term := ⟨stx[5]⟩
     resolutionCore secondHyp firstHyp pivotTerm
+
+example : A ∨ B ∨ D ∨ (W ∨ Z) → E ∨ F ∨ G ∨ ¬ (W ∨ Z) → A ∨ B ∨ D ∨ E ∨ F ∨ G := by
+  intros h₁ h₂
+  R1 h₁, h₂, (W ∨ Z)
+

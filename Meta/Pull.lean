@@ -1,6 +1,7 @@
 import Lean
 
 import Meta.Boolean
+import Meta.LiftOrNToImp
 
 open Lean Elab Tactic
 
@@ -99,12 +100,25 @@ syntax (name := pull2) "pull2" term "," term "," term "," ident : tactic
 def pullIndex (index : Nat) (hypS : Syntax) (type : Expr) (id : Ident) : TacticM Unit :=
   pullIndex2 0 index hypS type id
 
+-- tries to find pivot in the tail of type, even if it has length > 1 (as an or-chain)
+-- pulls it to the beginning if found
+def pullTail (pivot hyp type : Expr) (id : Ident) : TacticM Unit := do
+  let props := collectPropsInOrChain type
+  let target := collectPropsInOrChain pivot
+  let restLength := props.length - target.length
+  let propsTail := List.drop restLength  props
+  if propsTail == target then
+    let fname ← mkFreshId
+    groupOrPrefixCore hyp type restLength fname
+    evalTactic (← `(tactic| have $id := orComm $(mkIdent fname)))
+  else throwError ("term not found: " ++ (toString pivot))
+
 -- insert pivot in the first position of the or-chain
 -- represented by hyp
-def pullCore (pivot type : Expr) (hypS : Syntax) (id : Ident) : TacticM Unit := do
-  let index' := getIndex pivot type
-  let index ←
-    match index' with
-    | some i => pure i
-    | none   => throwError ("term not found: " ++ (toString pivot))
-  pullIndex index hypS type id
+def pullCore (pivot type : Expr) (hypS : Syntax) (id : Ident) : TacticM Unit :=
+  match getIndex pivot type with
+  | some i => pullIndex i hypS type id
+  | none   => withMainContext do
+    let ctx ← getLCtx
+    let hyp := (ctx.findFromUserName? hypS.getId).get!.toExpr
+    pullTail pivot hyp type id
